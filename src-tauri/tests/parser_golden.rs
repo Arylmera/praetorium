@@ -6,7 +6,7 @@ use praetorium_lib::events::ClaudeEvent;
 #[test]
 fn real_session_parses_without_panic_and_terminates_in_result() {
     let raw = include_str!("fixtures/sample-run.jsonl");
-    let events: Vec<ClaudeEvent> = raw.lines().filter_map(parse_line).collect();
+    let events: Vec<ClaudeEvent> = raw.lines().flat_map(parse_line).collect();
 
     assert!(!events.is_empty(), "expected at least one parsed event");
     assert!(

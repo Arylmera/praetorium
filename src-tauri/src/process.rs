@@ -26,7 +26,7 @@ pub async fn run_claude(
             match event {
                 CommandEvent::Stdout(bytes) => {
                     let line = String::from_utf8_lossy(&bytes);
-                    if let Some(ev) = parse_line(&line) {
+                    for ev in parse_line(&line) {
                         let _ = on_event.send(ev);
                     }
                 }
