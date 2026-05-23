@@ -1,6 +1,7 @@
 import { createSignal, Show, For } from "solid-js";
 import { Files } from "./explorer/Files";
 import { MapView } from "./explorer/Map";
+import { Sessions } from "./explorer/Sessions";
 
 type Sub = "files" | "map" | "sessions";
 const SUBS: Sub[] = ["files", "map", "sessions"];
@@ -20,7 +21,7 @@ export function Explorer() {
       <div style={{ flex: "1", "min-height": "0" }}>
         <Show when={sub() === "files"}><Files /></Show>
         <Show when={sub() === "map"}><MapView /></Show>
-        <Show when={sub() === "sessions"}><div style={{ padding: "14px", color: "var(--fg)" }}>Sessions — added in Task 7.</div></Show>
+        <Show when={sub() === "sessions"}><Sessions /></Show>
       </div>
     </div>
   );
