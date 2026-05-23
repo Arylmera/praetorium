@@ -19,6 +19,7 @@ export interface GraphNode {
   kind: NodeKind;
   label: string;
   status: NodeStatus;
+  weight?: number;
 }
 export interface GraphEdge {
   id: string;       // `${source}->${target}`
@@ -34,3 +35,7 @@ export interface GraphState {
   edges: Map<string, GraphEdge>;
   activity: ActivityPing[];
 }
+
+export interface VaultFile { rel: string; name: string; dir: string }
+export interface SessionMeta { id: string; mtimeMs: number; title: string; sizeBytes: number }
+export interface Turn { role: "user" | "assistant"; text: string; ts: string }
