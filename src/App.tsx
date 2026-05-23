@@ -4,7 +4,7 @@ import { Cockpit } from "./components/Cockpit";
 import { ReaderPane } from "./components/ReaderPane";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
 import { ViewSwitcher, type View } from "./components/ViewSwitcher";
-import { reduceMotion, setReduceMotion, applyReduceMotion } from "./lib/settings";
+import { reduceMotion, setReduceMotion, applyReduceMotion, layoutName, setLayout } from "./lib/settings";
 
 function App() {
   const [view, setView] = createSignal<View>("console");
@@ -16,6 +16,10 @@ function App() {
         <span style={{ color: "var(--accent)", "letter-spacing": "2px" }}>PRAETORIUM</span>
         <ViewSwitcher view={view} setView={setView} />
         <ThemeSwitcher />
+        <select value={layoutName()} onChange={(e) => setLayout(e.currentTarget.value as "radial" | "hierarchical")}>
+          <option value="radial">radial</option>
+          <option value="hierarchical">hierarchical</option>
+        </select>
         <label style={{ "font-size": "11px", color: "var(--fg)" }}>
           <input type="checkbox" checked={reduceMotion()}
             onChange={(e) => { setReduceMotion(e.currentTarget.checked); applyReduceMotion(); }} /> reduce motion

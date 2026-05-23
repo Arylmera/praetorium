@@ -1,9 +1,13 @@
 import { createMemo, For } from "solid-js";
 import { graph } from "../lib/runStore";
-import { RadialForceLayout } from "../lib/layout";
+import { RadialForceLayout, HierarchicalLayout, type LayoutStrategy } from "../lib/layout";
+import { layoutName } from "../lib/settings";
 
 const W = 900, H = 640;
-const layout = new RadialForceLayout();
+const strategies: Record<string, LayoutStrategy> = {
+  radial: new RadialForceLayout(),
+  hierarchical: new HierarchicalLayout(),
+};
 
 const nodeColor = (kind: string, status: string) =>
   status === "failed" ? "tomato"
@@ -13,6 +17,7 @@ const nodeColor = (kind: string, status: string) =>
 export function Cockpit() {
   const positioned = createMemo(() => {
     const g = graph();
+    const layout = strategies[layoutName()] ?? strategies.radial;
     const pos = new Map(layout.layout(g, W, H).map((p) => [p.id, p]));
     return { g, pos };
   });
