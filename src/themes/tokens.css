@@ -1,0 +1,19 @@
+:root, [data-theme="imperial"] {
+  --bg: #0c0a07;        --panel: #1a1206;     --fg: #e8dcc0;
+  --accent: #d4af37;    --accent-dim: #8a6d1f; --border: #4a3a16;
+  --font-display: Georgia, 'Times New Roman', serif;
+  --font-mono: 'Cascadia Code', Consolas, monospace;
+}
+[data-theme="cockpit"] {
+  --bg: #0a0e14;        --panel: #0f2230;     --fg: #d6f5f4;
+  --accent: #3ddbd9;    --accent-dim: #7b61ff; --border: #1c3a4a;
+  --font-display: 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Code', Consolas, monospace;
+}
+[data-theme="terminal"] {
+  --bg: #101012;        --panel: #18181b;     --fg: #e4e4e7;
+  --accent: #22c55e;    --accent-dim: #52525b; --border: #26262b;
+  --font-display: 'Cascadia Code', Consolas, monospace;
+  --font-mono: 'Cascadia Code', Consolas, monospace;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-display); margin: 0; }
