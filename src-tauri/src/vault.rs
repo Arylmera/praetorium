@@ -54,3 +54,10 @@ pub async fn read_vault_file(path: String) -> Result<String, String> {
     }
     tokio::fs::read_to_string(&p).await.map_err(|e| format!("read failed: {e}"))
 }
+
+/// Return the raw _Cartographicum/meta.json text for the vault.
+#[tauri::command]
+pub async fn read_cartographicum(vault_path: String) -> Result<String, String> {
+    let p = std::path::Path::new(&vault_path).join("_Cartographicum").join("meta.json");
+    tokio::fs::read_to_string(&p).await.map_err(|e| format!("read failed: {e}"))
+}
