@@ -1,0 +1,39 @@
+import { createMemo, For } from "solid-js";
+import { graph } from "../lib/runStore";
+import { RadialForceLayout } from "../lib/layout";
+
+const W = 900, H = 640;
+const layout = new RadialForceLayout();
+
+const nodeColor = (kind: string, status: string) =>
+  status === "failed" ? "tomato"
+  : kind === "folder" ? "var(--accent-dim)"
+  : "var(--accent)";
+
+export function Cockpit() {
+  const positioned = createMemo(() => {
+    const g = graph();
+    const pos = new Map(layout.layout(g, W, H).map((p) => [p.id, p]));
+    return { g, pos };
+  });
+  return (
+    <div style={{ height: "100%", overflow: "hidden" }}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
+        <For each={[...positioned().g.edges.values()]}>{(e) => {
+          const a = positioned().pos.get(e.source); const b = positioned().pos.get(e.target);
+          return a && b ? <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--border)" stroke-width="1.5" /> : null;
+        }}</For>
+        <For each={[...positioned().g.nodes.values()]}>{(n) => {
+          const p = positioned().pos.get(n.id); if (!p) return null;
+          const r = n.kind === "master" ? 14 : n.kind === "agent" ? 10 : 7;
+          return (
+            <g>
+              <circle cx={p.x} cy={p.y} r={r} fill="var(--panel)" stroke={nodeColor(n.kind, n.status)} stroke-width="2" />
+              <text x={p.x + r + 4} y={p.y + 4} fill="var(--fg)" style={{ "font-size": "11px" }}>{n.label}</text>
+            </g>
+          );
+        }}</For>
+      </svg>
+    </div>
+  );
+}
