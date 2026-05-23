@@ -1,7 +1,7 @@
 import { createSignal, Show } from "solid-js";
 import { Console } from "./components/Console";
 import { Cockpit } from "./components/Cockpit";
-import { ReaderPane } from "./components/ReaderPane";
+import { Explorer } from "./components/Explorer";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
 import { ViewSwitcher, type View } from "./components/ViewSwitcher";
 import { reduceMotion, setReduceMotion, applyReduceMotion, layoutName, setLayout } from "./lib/settings";
@@ -28,7 +28,7 @@ function App() {
       <main style={{ flex: "1", "min-height": "0" }}>
         <Show when={view() === "console"}><Console /></Show>
         <Show when={view() === "cockpit"}><Cockpit /></Show>
-        <Show when={view() === "reader"}><ReaderPane /></Show>
+        <Show when={view() === "explorer"}><Explorer /></Show>
       </main>
     </div>
   );

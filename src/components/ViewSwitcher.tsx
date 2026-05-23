@@ -1,6 +1,6 @@
 import { type Accessor, type Setter, For } from "solid-js";
-export type View = "console" | "cockpit" | "reader";
-const VIEWS: View[] = ["console", "cockpit", "reader"];
+export type View = "console" | "cockpit" | "explorer";
+const VIEWS: View[] = ["console", "cockpit", "explorer"];
 export function ViewSwitcher(props: { view: Accessor<View>; setView: Setter<View> }) {
   return (
     <div style={{ display: "flex", gap: "4px" }}>
