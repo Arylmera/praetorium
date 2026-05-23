@@ -18,7 +18,8 @@ export function Console() {
     setRunning(true);
     await runClaude(p, (ev) => {
       if (ev.type === "assistantText") push({ kind: "assistant", text: ev.data.text });
-      else if (ev.type === "result") push({ kind: "result", text: ev.data.result });
+      // The success `result` repeats the final assistant text — only surface it on error.
+      else if (ev.type === "result") { if (ev.data.isError) push({ kind: "error", text: ev.data.result }); }
       else if (ev.type === "runError") push({ kind: "error", text: ev.data.message });
       else if (ev.type === "runComplete") setRunning(false);
     });
