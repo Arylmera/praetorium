@@ -17,3 +17,12 @@
   --font-mono: 'Cascadia Code', Consolas, monospace;
 }
 body { background: var(--bg); color: var(--fg); font-family: var(--font-display); margin: 0; }
+
+@keyframes praetorium-spawn { 0% { r: 0; opacity: 0; } 60% { opacity: 1; } 100% { opacity: 1; } }
+@keyframes praetorium-ring { 0% { r: 8; opacity: .7; } 100% { r: 30; opacity: 0; } }
+.cockpit-node { animation: praetorium-spawn .45s ease both; transform-box: fill-box; }
+.cockpit-edge { transition: x2 .4s ease, y2 .4s ease, x1 .4s ease, y1 .4s ease; }
+.cockpit-ring { fill: none; stroke: var(--accent); animation: praetorium-ring 1.6s ease-out forwards; }
+[data-reduce-motion="1"] .cockpit-node,
+[data-reduce-motion="1"] .cockpit-edge,
+[data-reduce-motion="1"] .cockpit-ring { animation: none !important; transition: none !important; }
