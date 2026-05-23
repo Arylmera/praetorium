@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Praetorium — populated mockup</title>
+<style>
+  /* Real theme tokens from src/themes/tokens.css */
+  .imperial { --bg:#0c0a07; --panel:#1a1206; --fg:#e8dcc0; --accent:#d4af37; --accent-dim:#8a6d1f; --border:#4a3a16; --disp:Georgia,'Times New Roman',serif; --mono:'Cascadia Code',Consolas,monospace; }
+  .cockpit  { --bg:#0a0e14; --panel:#0f2230; --fg:#d6f5f4; --accent:#3ddbd9; --accent-dim:#7b61ff; --border:#1c3a4a; --disp:'Segoe UI',system-ui,sans-serif; --mono:'Cascadia Code',Consolas,monospace; }
+  body { margin:0; background:#000; font-family:'Segoe UI',system-ui,sans-serif; padding:24px; }
+  .label { color:#9aa; font:600 13px 'Segoe UI'; margin:22px 6px 8px; letter-spacing:.5px; }
+  .app { width:1040px; height:560px; border-radius:10px; overflow:hidden; box-shadow:0 8px 40px rgba(0,0,0,.6); background:var(--bg); color:var(--fg); font-family:var(--disp); display:flex; flex-direction:column; border:1px solid var(--border); }
+  .hdr { display:flex; align-items:center; justify-content:space-between; padding:9px 16px; border-bottom:1px solid var(--border); }
+  .brand { color:var(--accent); letter-spacing:3px; font-weight:700; }
+  .tabs { display:flex; gap:5px; }
+  .tab { border:1px solid var(--border); padding:4px 12px; background:var(--panel); color:var(--fg); border-radius:4px; font:12px var(--disp); text-transform:capitalize; }
+  .tab.on { background:var(--accent); color:var(--bg); font-weight:700; }
+  .ctrls { display:flex; gap:8px; align-items:center; font:11px var(--disp); }
+  .pill { border:1px solid var(--border); background:var(--panel); color:var(--fg); padding:3px 8px; border-radius:4px; }
+  .main { flex:1; min-height:0; display:flex; }
+  /* Console */
+  .stream { flex:1; padding:16px; overflow:hidden; font-family:var(--mono); font-size:13px; line-height:1.5; }
+  .ln-prompt { color:var(--accent); white-space:pre-wrap; margin:6px 0; }
+  .ln-asst { color:var(--fg); white-space:pre-wrap; margin:6px 0; opacity:.95; }
+  .inbar { display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--border); }
+  .input { flex:1; background:var(--panel); color:var(--fg); border:1px solid var(--border); padding:9px 10px; border-radius:5px; font:13px var(--mono); }
+  .btn { background:var(--accent); color:var(--bg); border:none; padding:9px 16px; border-radius:5px; font-weight:700; }
+  /* sidebars */
+  .side { width:240px; border-right:1px solid var(--border); padding:10px; overflow:hidden; font-size:12.5px; }
+  .side .it { padding:4px 6px; color:var(--fg); border-radius:4px; }
+  .side .it.on { background:var(--panel); color:var(--accent); }
+  .doc { flex:1; padding:18px 22px; overflow:hidden; line-height:1.55; }
+  .doc h1 { font-size:21px; color:var(--accent); margin:0 0 4px; border-bottom:1px solid var(--border); padding-bottom:6px; }
+  .doc h2 { font-size:15px; color:var(--fg); margin:16px 0 4px; }
+  .doc p { font-size:13.5px; margin:6px 0; }
+  .wl { color:var(--accent); text-decoration:underline; text-underline-offset:2px; }
+  .wl.bad { color:var(--accent-dim); text-decoration:none; opacity:.7; }
+  .sub-tabs { display:flex; gap:5px; padding:7px 12px; border-bottom:1px solid var(--border); }
+  /* sessions */
+  .turn { margin:9px 16px; padding:9px 11px; }
+  .turn.u { background:var(--panel); border-left:2px solid var(--accent); }
+  .turn.a { border-left:2px solid var(--accent-dim); }
+  .role { font-size:9.5px; color:var(--accent-dim); text-transform:uppercase; letter-spacing:1px; }
+  .turn pre { margin:3px 0 0; white-space:pre-wrap; font-family:var(--mono); font-size:12.5px; color:var(--fg); }
+  text { font-family:var(--disp); }
+</style>
+</head>
+<body>
+
+<!-- 1. CONSOLE (imperial) -->
+<div class="label">① Console — running a prompt (Imperial Cogitator theme, default)</div>
+<div class="app imperial">
+  <div class="hdr"><span class="brand">PRAETORIUM</span>
+    <div class="tabs"><span class="tab on">console</span><span class="tab">cockpit</span><span class="tab">explorer</span></div>
+    <div class="ctrls"><span class="pill">radial ▾</span><span class="pill">imperial ▾</span><span class="pill">▢ reduce motion</span></div>
+  </div>
+  <div class="main"><div class="stream">
+    <div class="ln-prompt">&gt; use a subagent to audit the network notes and summarise the open items</div>
+    <div class="ln-asst">I'll dispatch the genetor (Hera Legatus) to inspect the network documentation, then summarise.</div>
+    <div class="ln-asst">The subagent reviewed Network-Map-Constants.md and Network Map.md. Open items found:
+ • sde + sdf orphan WD Green 3TB drives flagged to pull at next power-down (sdf failing SMART)
+ • Pi-hole secondary not yet failover-tested
+ • 2 DHCP reservations missing hostnames in the Asus lease table
+Summary sealed. Nothing else outstanding.</div>
+  </div></div>
+  <div class="inbar"><div class="input">Ask Claude…</div><div class="btn">Run</div></div>
+</div>
+
+<!-- 2. COCKPIT (cockpit theme) -->
+<div class="label">② Cockpit — live subagent graph mid-run (Neural Cockpit theme)</div>
+<div class="app cockpit">
+  <div class="hdr"><span class="brand">PRAETORIUM</span>
+    <div class="tabs"><span class="tab">console</span><span class="tab on">cockpit</span><span class="tab">explorer</span></div>
+    <div class="ctrls"><span class="pill">radial ▾</span><span class="pill">cockpit ▾</span><span class="pill">▢ reduce motion</span></div>
+  </div>
+  <div class="main"><svg width="100%" height="100%" viewBox="0 0 1040 470" preserveAspectRatio="xMidYMid meet" style="background:radial-gradient(circle at 50% 42%, #0f2230, #0a0e14)">
+    <!-- edges -->
+    <line x1="520" y1="235" x2="330" y2="140" stroke="#3ddbd9" stroke-width="2"/>
+    <line x1="520" y1="235" x2="720" y2="150" stroke="#3ddbd9" stroke-width="2"/>
+    <line x1="330" y1="140" x2="200" y2="80"  stroke="#1c3a4a" stroke-width="1.5"/>
+    <line x1="330" y1="140" x2="190" y2="210" stroke="#1c3a4a" stroke-width="1.5"/>
+    <line x1="720" y1="150" x2="860" y2="95"  stroke="#1c3a4a" stroke-width="1.5"/>
+    <line x1="720" y1="150" x2="865" y2="220" stroke="#1c3a4a" stroke-width="1.5"/>
+    <!-- activity ring -->
+    <circle cx="190" cy="210" r="22" fill="none" stroke="#3ddbd9" opacity=".4"/>
+    <!-- folder nodes -->
+    <circle cx="200" cy="80"  r="9"  fill="#0f2230" stroke="#7b61ff" stroke-width="2"/><text x="214" y="84" fill="#9fb3c8" font-size="12">Hera/Technical/Network</text>
+    <circle cx="190" cy="210" r="9"  fill="#3ddbd9" stroke="#3ddbd9" stroke-width="2"/><text x="120" y="240" fill="#9fb3c8" font-size="12">Anamnesis/Tabularium</text>
+    <circle cx="860" cy="95"  r="9"  fill="#0f2230" stroke="#7b61ff" stroke-width="2"/><text x="760" y="86" fill="#9fb3c8" font-size="12">Librarium/AI</text>
+    <circle cx="865" cy="220" r="9"  fill="#0f2230" stroke="#7b61ff" stroke-width="2"/><text x="812" y="244" fill="#9fb3c8" font-size="12">Workshop</text>
+    <!-- subagents -->
+    <circle cx="330" cy="140" r="13" fill="#1a1840" stroke="#3ddbd9" stroke-width="2.5"/><text x="300" y="120" fill="#3ddbd9" font-size="13">genetor</text>
+    <circle cx="720" cy="150" r="13" fill="#1a1840" stroke="#22c55e" stroke-width="2.5"/><text x="690" y="130" fill="#22c55e" font-size="13">lexicanum ✓</text>
+    <!-- master -->
+    <circle cx="520" cy="235" r="20" fill="#0f2230" stroke="#d4af37" stroke-width="3"/><text x="492" y="280" fill="#d4af37" font-size="14">master</text>
+  </svg></div>
+</div>
+
+<!-- 3. EXPLORER · FILES (imperial) -->
+<div class="label">③ Explorer · Files — markdown + working wikilinks</div>
+<div class="app imperial">
+  <div class="hdr"><span class="brand">PRAETORIUM</span>
+    <div class="tabs"><span class="tab">console</span><span class="tab">cockpit</span><span class="tab on">explorer</span></div>
+    <div class="ctrls"><span class="pill">imperial ▾</span></div>
+  </div>
+  <div class="sub-tabs"><span class="tab on">files</span><span class="tab">map</span><span class="tab">sessions</span></div>
+  <div class="main">
+    <div class="side">
+      <div class="it">EMPEROR</div>
+      <div class="it on">Terra</div>
+      <div class="it">Lexicon</div>
+      <div class="it">Network-Map-Constants</div>
+      <div class="it">Agentic-Operating-System</div>
+      <div class="it">Codex-Imperialis</div>
+      <div class="it">Codex-Terrae</div>
+      <div class="it">Chronica index</div>
+    </div>
+    <div class="doc">
+      <h1>Terra</h1>
+      <p>Supreme gateway to Vault Terra. Every structural entry, Legatus, and reference folder is reachable from here.</p>
+      <h2>Legati</h2>
+      <p>The sovereign domains are governed by <span class="wl">genetor</span> (Hera), <span class="wl">lexicanum</span> (Librarium), <span class="wl">enginseer</span> (Workshop), and <span class="wl bad">artisan</span> (Armoury).</p>
+      <h2>Law</h2>
+      <p>Universal law lives in <span class="wl">Codex-Imperialis</span>; vault-specific law in <span class="wl">Codex-Terrae</span>. See also <span class="wl">EMPEROR</span> for the governance layer.</p>
+    </div>
+  </div>
+</div>
+
+<!-- 4. EXPLORER · MAP + SESSIONS split -->
+<div class="label">④ Explorer · Map (Cartographicum) &nbsp;·&nbsp; and Sessions transcript</div>
+<div style="display:flex; gap:18px;">
+  <div class="app imperial" style="width:511px">
+    <div class="sub-tabs"><span class="tab">files</span><span class="tab on">map</span><span class="tab">sessions</span></div>
+    <div class="main"><svg width="100%" height="100%" viewBox="0 0 511 470" style="background:var(--bg)">
+      <line x1="255" y1="235" x2="150" y2="120" stroke="#4a3a16" stroke-width="1.5"/>
+      <line x1="150" y1="120" x2="80" y2="70" stroke="#4a3a16" stroke-width="1.5"/>
+      <line x1="255" y1="235" x2="370" y2="150" stroke="#4a3a16" stroke-width="1.5"/>
+      <line x1="370" y1="150" x2="440" y2="95" stroke="#4a3a16" stroke-width="1.5"/>
+      <line x1="255" y1="235" x2="360" y2="330" stroke="#4a3a16" stroke-width="1.5"/>
+      <line x1="255" y1="235" x2="150" y2="350" stroke="#4a3a16" stroke-width="1.5"/>
+      <!-- folder nodes sized by note count -->
+      <circle cx="255" cy="235" r="26" fill="#1a1206" stroke="#d4af37" stroke-width="2"/><text x="285" y="239" fill="#e8dcc0" font-size="12">Anamnesis · 438</text>
+      <circle cx="150" cy="120" r="14" fill="#1a1206" stroke="#d4af37" stroke-width="2"/><text x="60" y="108" fill="#e8dcc0" font-size="11">Hera</text>
+      <circle cx="370" cy="150" r="13" fill="#1a1206" stroke="#d4af37" stroke-width="2"/><text x="386" y="154" fill="#e8dcc0" font-size="11">Librarium</text>
+      <circle cx="360" cy="330" r="11" fill="#1a1206" stroke="#d4af37" stroke-width="2"/><text x="376" y="334" fill="#e8dcc0" font-size="11">Workshop</text>
+      <circle cx="150" cy="350" r="10" fill="#1a1206" stroke="#d4af37" stroke-width="2"/><text x="60" y="354" fill="#e8dcc0" font-size="11">Armoury · 10</text>
+      <!-- hub children -->
+      <circle cx="80" cy="70" r="6" fill="#1a1206" stroke="#8a6d1f" stroke-width="1.5"/><text x="10" y="60" fill="#8a6d1f" font-size="10">Chronica MOC</text>
+      <circle cx="440" cy="95" r="6" fill="#1a1206" stroke="#8a6d1f" stroke-width="1.5"/><text x="360" y="86" fill="#8a6d1f" font-size="10">Code Review Graph</text>
+    </svg></div>
+  </div>
+  <div class="app imperial" style="width:511px">
+    <div class="sub-tabs"><span class="tab">files</span><span class="tab">map</span><span class="tab on">sessions</span></div>
+    <div class="main">
+      <div class="side" style="width:170px">
+        <div class="it on">audit network notes…</div>
+        <div class="it">build phase-3 explorer</div>
+        <div class="it">seal kuma topology</div>
+        <div class="it">npm SSO webhook fix</div>
+        <div class="it">truenas docker map</div>
+      </div>
+      <div style="flex:1; overflow:hidden">
+        <div class="turn u"><div class="role">user</div><pre>use a subagent to audit the network notes and summarise the open items</pre></div>
+        <div class="turn a"><div class="role">assistant</div><pre>Dispatching genetor.
+[Read Hera/Technical/Network/Network-Map-Constants.md]
+[Read Hera/Technical/Network/Network Map.md]</pre></div>
+        <div class="turn a"><div class="role">assistant</div><pre>3 open items: orphan WD Green drives to pull, Pi-hole failover untested, 2 DHCP hostnames missing.</pre></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
