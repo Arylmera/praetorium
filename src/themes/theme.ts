@@ -3,7 +3,8 @@ export type Theme = (typeof THEMES)[number];
 const KEY = "praetorium.theme";
 
 export function getTheme(): Theme {
-  return (localStorage.getItem(KEY) as Theme) ?? "imperial";
+  const stored = localStorage.getItem(KEY);
+  return THEMES.includes(stored as Theme) ? (stored as Theme) : "imperial";
 }
 export function setTheme(theme: Theme): void {
   document.documentElement.setAttribute("data-theme", theme);
