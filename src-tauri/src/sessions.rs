@@ -17,7 +17,10 @@ pub fn line_to_turn(line: &str) -> Option<Turn> {
     let ty = v.get("type")?.as_str()?;
     if ty != "user" && ty != "assistant" { return None; }
     if v.get("isMeta").and_then(|b| b.as_bool()).unwrap_or(false) { return None; }
+    // Drop synthetic / API-error lines (e.g. rate-limit notices) — not real turns.
+    if v.get("isApiErrorMessage").and_then(|b| b.as_bool()).unwrap_or(false) { return None; }
     let msg = v.get("message")?;
+    if msg.get("model").and_then(|m| m.as_str()) == Some("<synthetic>") { return None; }
     let role = msg.get("role")?.as_str()?.to_string();
     let ts = v.get("timestamp").and_then(|s| s.as_str()).unwrap_or("").to_string();
     let content = msg.get("content")?;
@@ -60,6 +63,8 @@ pub async fn list_sessions(project_dir: String) -> Result<Vec<SessionMeta>, Stri
     let mut out = vec![];
     for entry in rd.flatten() {
         let path = entry.path();
+        // Only top-level files — never recurse into the subagents/ subdir.
+        if !path.is_file() { continue; }
         if path.extension().and_then(|e| e.to_str()) != Some("jsonl") { continue; }
         let meta = match entry.metadata() { Ok(m) => m, Err(_) => continue };
         let size_bytes = meta.len();
