@@ -1,5 +1,6 @@
 import { Console } from "./components/Console";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
+import { ReaderPane } from "./components/ReaderPane";
 
 function App() {
   return (
@@ -9,8 +10,9 @@ function App() {
         <span style={{ color: "var(--accent)", "letter-spacing": "2px" }}>PRAETORIUM</span>
         <ThemeSwitcher />
       </header>
-      <main style={{ flex: "1", "min-height": "0" }}>
+      <main style={{ flex: "1", "min-height": "0", display: "grid", "grid-template-columns": "1fr 1fr" }}>
         <Console />
+        <ReaderPane />
       </main>
     </div>
   );
