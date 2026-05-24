@@ -21,7 +21,12 @@ pub struct ClaudeInvocation {
 
 /// Build the `claude` arg vector + working dir from the run options. `--model`
 /// is appended only when a model is chosen; `cwd` is carried through untouched.
-pub fn plan_claude(prompt: &str, cwd: Option<String>, model: Option<String>) -> ClaudeInvocation {
+pub fn plan_claude(
+    prompt: &str,
+    cwd: Option<String>,
+    model: Option<String>,
+    resume_id: Option<String>,
+) -> ClaudeInvocation {
     let mut args = vec![
         "-p".to_string(),
         prompt.to_string(),
@@ -32,6 +37,10 @@ pub fn plan_claude(prompt: &str, cwd: Option<String>, model: Option<String>) -> 
     if let Some(model) = model {
         args.push("--model".to_string());
         args.push(model);
+    }
+    if let Some(id) = resume_id {
+        args.push("--resume".to_string());
+        args.push(id);
     }
     ClaudeInvocation { args, cwd }
 }
@@ -47,7 +56,7 @@ pub async fn run_claude(
     model: Option<String>,
     on_event: Channel<ClaudeEvent>,
 ) -> Result<(), String> {
-    let plan = plan_claude(&prompt, cwd, model);
+    let plan = plan_claude(&prompt, cwd, model, None);
     let shell = app.shell();
     let mut command = shell
         .command("claude")
@@ -92,28 +101,48 @@ mod tests {
 
     #[test]
     fn includes_model_arg_only_when_provided() {
-        let with = plan_claude("hi", None, Some("opus".to_string()));
+        let with = plan_claude("hi", None, Some("opus".to_string()), None);
         assert!(with
             .args
             .windows(2)
             .any(|w| w[0] == "--model" && w[1] == "opus"));
 
-        let without = plan_claude("hi", None, None);
+        let without = plan_claude("hi", None, None, None);
         assert!(!without.args.iter().any(|a| a == "--model"));
     }
 
     #[test]
+    fn includes_resume_arg_only_when_provided() {
+        let with = plan_claude("hi", None, None, Some("sess-123".to_string()));
+        assert!(with
+            .args
+            .windows(2)
+            .any(|w| w[0] == "--resume" && w[1] == "sess-123"));
+
+        let without = plan_claude("hi", None, None, None);
+        assert!(!without.args.iter().any(|a| a == "--resume"));
+    }
+
+    #[test]
+    fn composes_model_and_resume() {
+        let plan = plan_claude("hi", None, Some("opus".to_string()), Some("s1".to_string()));
+        let joined = plan.args.join(" ");
+        assert!(joined.contains("--model opus"));
+        assert!(joined.contains("--resume s1"));
+    }
+
+    #[test]
     fn sets_cwd_only_when_provided() {
-        let with = plan_claude("hi", Some("/tmp/proj".to_string()), None);
+        let with = plan_claude("hi", Some("/tmp/proj".to_string()), None, None);
         assert_eq!(with.cwd, Some("/tmp/proj".to_string()));
 
-        let without = plan_claude("hi", None, None);
+        let without = plan_claude("hi", None, None, None);
         assert_eq!(without.cwd, None);
     }
 
     #[test]
     fn always_includes_base_args() {
-        let plan = plan_claude("do thing", None, None);
+        let plan = plan_claude("do thing", None, None, None);
         assert_eq!(
             plan.args,
             vec!["-p", "do thing", "--output-format", "stream-json", "--verbose"]
