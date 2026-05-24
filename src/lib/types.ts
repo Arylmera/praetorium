@@ -19,6 +19,7 @@ export interface GraphNode {
   kind: NodeKind;
   label: string;
   status: NodeStatus;
+  session?: string;
   weight?: number;
 }
 export interface GraphEdge {
@@ -39,3 +40,15 @@ export interface GraphState {
 export interface VaultFile { rel: string; name: string; dir: string }
 export interface SessionMeta { id: string; mtimeMs: number; title: string; sizeBytes: number }
 export interface Turn { role: "user" | "assistant"; text: string; ts: string }
+
+export type SessionEvent =
+  | { kind: "turn"; data: { role: string; text: string } }
+  | { kind: "subagentSpawn"; data: { toolUseId: string; subagentType: string } }
+  | { kind: "toolActivity"; data: { toolUseId: string; name: string; filePath: string | null } }
+  | { kind: "agentDone"; data: { toolUseId: string; isError: boolean } };
+
+export type WatchEvent =
+  | { type: "session"; data: { sessionId: string; project: string; agentRef: string; event: SessionEvent } }
+  | { type: "state"; data: { sessionId: string; state: string } };
+
+export interface LiveSessionMeta { id: string; project: string; title: string; lastActivityMs: number; state: string }

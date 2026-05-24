@@ -1,4 +1,4 @@
-import type { ClaudeEvent, GraphState } from "./types";
+import type { ClaudeEvent, GraphState, WatchEvent } from "./types";
 
 export const MASTER_ID = "__master__";
 
@@ -78,5 +78,47 @@ export function reduce(prev: GraphState, ev: ClaudeEvent): GraphState {
     }
     default:
       return s; // unknown / runError: ignore for graph purposes
+  }
+}
+
+const sessionMaster = (sid: string) => `${sid}:master`;
+
+/** Fold a WatchEvent into the shared constellation graph.
+ *  Agent/master nodes are namespaced per session; folder nodes are GLOBAL
+ *  (keyed by absolute path) so sessions touching the same folder share a node. */
+export function reduceWatch(prev: GraphState, e: WatchEvent): GraphState {
+  if (e.type !== "session") return prev;
+  const s: GraphState = { nodes: new Map(prev.nodes), edges: new Map(prev.edges), activity: prev.activity };
+  const { sessionId, agentRef, event } = e.data;
+  const masterId = sessionMaster(sessionId);
+  if (!s.nodes.has(masterId)) {
+    s.nodes.set(masterId, { id: masterId, kind: "master", label: e.data.project || sessionId.slice(0, 6), status: "running", session: sessionId });
+  }
+  const ownerId = agentRef === "master" ? masterId : `${sessionId}:${agentRef}`;
+  switch (event.kind) {
+    case "subagentSpawn": {
+      const id = `${sessionId}:${event.data.toolUseId}`;
+      s.nodes.set(id, { id, kind: "agent", label: event.data.subagentType || "agent", status: "running", session: sessionId });
+      addEdge(s, masterId, id);
+      return s;
+    }
+    case "toolActivity": {
+      if (event.data.filePath) {
+        const folderId = dirname(event.data.filePath);
+        if (!s.nodes.has(folderId)) s.nodes.set(folderId, { id: folderId, kind: "folder", label: folderId, status: "running" });
+        if (!s.nodes.has(ownerId)) s.nodes.set(ownerId, { id: ownerId, kind: "agent", label: agentRef, status: "running", session: sessionId });
+        addEdge(s, ownerId, folderId);
+        s.activity = [...s.activity, { folderId, ts: Date.now() }];
+      }
+      return s;
+    }
+    case "agentDone": {
+      const id = `${sessionId}:${event.data.toolUseId}`;
+      const node = s.nodes.get(id);
+      if (node && node.kind === "agent") s.nodes.set(id, { ...node, status: event.data.isError ? "failed" : "complete" });
+      return s;
+    }
+    default:
+      return s; // turn: console only
   }
 }
