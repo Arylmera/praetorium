@@ -1,5 +1,5 @@
 import { createMemo, For, untrack } from "solid-js";
-import { graph } from "../lib/sessionStore";
+import { graph, metas } from "../lib/sessionStore";
 import { RadialForceLayout, HierarchicalLayout, type LayoutStrategy } from "../lib/layout";
 import { layoutName } from "../lib/settings";
 
@@ -14,6 +14,8 @@ const nodeStroke = (n: { kind: string; status: string; session?: string }) =>
   n.status === "failed" ? "tomato"
   : n.kind === "folder" ? "var(--accent-dim)"
   : n.session ? `hsl(${hue(n.session)},70%,60%)` : "var(--accent)";
+const nodeLabel = (n: { kind: string; session?: string; label: string }) =>
+  n.kind === "master" && n.session ? (metas().get(n.session)?.title ?? n.label) : n.label;
 
 export function Cockpit() {
   // Topology key: changes only when nodes/edges change, NOT on activity pings.
@@ -41,11 +43,11 @@ export function Cockpit() {
         }}</For>
         <For each={[...graph().nodes.values()]}>{(n) => {
           const p = positions().get(n.id); if (!p) return null;
-          const r = n.kind === "master" ? 14 : n.kind === "agent" ? 10 : 7;
+          const r = (n.kind === "master" || n.kind === "project") ? 14 : n.kind === "agent" ? 10 : 7;
           return (
             <g>
               <circle class="cockpit-node" cx={p.x} cy={p.y} r={r} fill="var(--panel)" stroke={nodeStroke(n)} stroke-width="2" />
-              <text x={p.x + r + 4} y={p.y + 4} fill="var(--fg)" style={{ "font-size": "11px" }}>{n.label}</text>
+              <text x={p.x + r + 4} y={p.y + 4} fill="var(--fg)" style={{ "font-size": "11px" }}>{nodeLabel(n)}</text>
             </g>
           );
         }}</For>

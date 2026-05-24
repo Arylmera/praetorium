@@ -1,5 +1,5 @@
 import { For, Show, createSignal } from "solid-js";
-import { sessions, activeId, setActiveId } from "../lib/sessionStore";
+import { sessions, activeId, setActiveId, metas } from "../lib/sessionStore";
 import { startRun, running } from "../lib/runStore";
 
 export function Console() {
@@ -10,12 +10,16 @@ export function Console() {
   return (
     <div style={{ display: "grid", "grid-template-columns": "240px 1fr", height: "100%" }}>
       <div style={{ overflow: "auto", "border-right": "1px solid var(--border)", padding: "8px" }}>
-        <For each={list()}>{([id, s]) => (
-          <div onClick={() => setActiveId(id)} style={{ cursor: "pointer", padding: "5px 6px", "font-size": "12px",
-            color: id === activeId() ? "var(--accent)" : "var(--fg)" }} title={id}>
-            ● {s.project ?? id.slice(0, 8)}
-          </div>
-        )}</For>
+        <For each={list()}>{([id, s]) => {
+          const m = () => metas().get(id);
+          return (
+            <div onClick={() => setActiveId(id)} style={{ cursor: "pointer", padding: "5px 6px", "font-size": "12px",
+              color: id === activeId() ? "var(--accent)" : "var(--fg)" }} title={id}>
+              ● {m()?.title ?? s.project ?? id.slice(0, 8)}
+              <div style={{ "font-size": "10px", color: "var(--accent-dim)" }}>{m()?.project ?? ""}</div>
+            </div>
+          );
+        }}</For>
       </div>
       <div style={{ display: "flex", "flex-direction": "column", height: "100%" }}>
         <div style={{ flex: "1", overflow: "auto", padding: "12px", "font-family": "var(--mono, monospace)", "font-size": "13px" }}>

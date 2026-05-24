@@ -48,6 +48,13 @@ fn project_for(path: &Path) -> String {
     let comps: Vec<_> = path.components().filter_map(|c| c.as_os_str().to_str()).collect();
     if let Some(i) = comps.iter().position(|c| *c == "projects") { comps.get(i + 1).map(|s| s.to_string()).unwrap_or_default() } else { String::new() }
 }
+fn basename(p: &str) -> String {
+    p.rsplit(|c| c == '\\' || c == '/').next().filter(|s| !s.is_empty()).unwrap_or(p).to_string()
+}
+fn line_cwd(line: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    v.get("cwd").and_then(|c| c.as_str()).map(|s| s.to_string())
+}
 fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -73,13 +80,15 @@ pub fn list_live_sessions() -> Result<Vec<SessionMeta>, String> {
             let age = now_ms().saturating_sub(mtime);
             if age > 10 * LIVE_WINDOW_MS { continue; }
             let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
-            let title = std::fs::read_to_string(&path).ok()
-                .and_then(|raw| raw.lines().find_map(|l| parse_transcript_line(l).into_iter()
-                    .find_map(|e| if let SessionEvent::Turn { role, text } = e { if role == "user" { Some(text) } else { None } } else { None })))
+            let content = std::fs::read_to_string(&path).unwrap_or_default();
+            let cwd_basename = content.lines().find_map(line_cwd).map(|c| basename(&c));
+            let friendly_project = cwd_basename.unwrap_or_else(|| project.clone());
+            let title = content.lines().find_map(|l| parse_transcript_line(l).into_iter()
+                    .find_map(|e| if let SessionEvent::Turn { role, text } = e { if role == "user" { Some(text) } else { None } } else { None }))
                 .map(|t| t.chars().take(80).collect::<String>())
                 .unwrap_or_else(|| id.clone());
             let state = if age <= LIVE_WINDOW_MS { "live" } else { "idle" }.to_string();
-            out.push(SessionMeta { id, project: project.clone(), title, last_activity_ms: mtime, state });
+            out.push(SessionMeta { id, project: friendly_project, title, last_activity_ms: mtime, state });
         }
     }
     out.sort_by(|a, b| b.last_activity_ms.cmp(&a.last_activity_ms));
@@ -94,8 +103,8 @@ pub struct WatcherHandle(pub Mutex<Option<notify::RecommendedWatcher>>);
 fn pump(path: &Path, offsets: &Mutex<HashMap<PathBuf, usize>>, ch: &Arc<Channel<WatchEvent>>) {
     let Some(session_id) = session_id_for(path) else { return; };
     let agent_ref = agent_ref_for(path);
-    let project = project_for(path);
     let content = match std::fs::read_to_string(path) { Ok(c) => c, Err(_) => return };
+    let project = content.lines().find_map(line_cwd).map(|c| basename(&c)).unwrap_or_else(|| project_for(path));
     let mut map = offsets.lock().unwrap();
     let off = *map.get(path).unwrap_or(&0);
     let start = if off > content.len() { 0 } else { off };

@@ -1,14 +1,21 @@
 import { createSignal } from "solid-js";
 import { reduceWatch, emptyGraph } from "./graph";
-import type { WatchEvent, GraphState } from "./types";
+import type { WatchEvent, GraphState, LiveSessionMeta } from "./types";
+import { listLiveSessions } from "./sessions";
 
 export type TranscriptLine = { agentRef: string; role: string; text: string };
 
 const [sessions, setSessions] = createSignal<Map<string, { project?: string; lines: TranscriptLine[] }>>(new Map());
 const [graph, setGraph] = createSignal<GraphState>(emptyGraph());
 const [activeId, setActiveId] = createSignal<string | null>(null);
+const [metas, setMetas] = createSignal<Map<string, LiveSessionMeta>>(new Map());
 
-export { sessions, graph, activeId, setActiveId };
+export { sessions, graph, activeId, setActiveId, metas };
+
+export async function refreshMetas(): Promise<void> {
+  const list = await listLiveSessions();
+  setMetas(new Map(list.map((m) => [m.id, m])));
+}
 
 export function applyWatch(e: WatchEvent) {
   if (e.type !== "session") return;

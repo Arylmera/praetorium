@@ -94,6 +94,11 @@ export function reduceWatch(prev: GraphState, e: WatchEvent): GraphState {
   if (!s.nodes.has(masterId)) {
     s.nodes.set(masterId, { id: masterId, kind: "master", label: e.data.project || sessionId.slice(0, 6), status: "running", session: sessionId });
   }
+  const projectId = `proj:${e.data.project}`;
+  if (!s.nodes.has(projectId)) {
+    s.nodes.set(projectId, { id: projectId, kind: "project", label: e.data.project, status: "running" });
+  }
+  addEdge(s, projectId, masterId);
   const ownerId = agentRef === "master" ? masterId : `${sessionId}:${agentRef}`;
   switch (event.kind) {
     case "subagentSpawn": {

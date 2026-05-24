@@ -5,13 +5,15 @@ import { Explorer } from "./components/Explorer";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
 import { ViewSwitcher, type View } from "./components/ViewSwitcher";
 import { reduceMotion, setReduceMotion, applyReduceMotion, layoutName, setLayout } from "./lib/settings";
-import { applyWatch } from "./lib/sessionStore";
+import { applyWatch, refreshMetas } from "./lib/sessionStore";
 import { watchSessions } from "./lib/sessions";
 
 function App() {
   const [view, setView] = createSignal<View>("console");
   applyReduceMotion();
   watchSessions(applyWatch);
+  refreshMetas();
+  setInterval(refreshMetas, 4000);
   return (
     <div style={{ display: "flex", "flex-direction": "column", height: "100vh" }}>
       <header style={{ display: "flex", "justify-content": "space-between", "align-items": "center",

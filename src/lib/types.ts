@@ -11,7 +11,7 @@ export type ClaudeEvent =
   | { type: "runError"; data: { message: string } };
 
 // ---- Graph model (consumed by graph.ts, layout.ts, Cockpit.tsx) ----
-export type NodeKind = "master" | "agent" | "folder";
+export type NodeKind = "master" | "agent" | "folder" | "project";
 export type NodeStatus = "running" | "complete" | "failed";
 
 export interface GraphNode {

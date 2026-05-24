@@ -22,4 +22,12 @@ describe("reduceWatch constellation", () => {
     expect(g.edges.has("s2:master->/repo/shared")).toBe(true);
     expect([...g.nodes.values()].filter((n) => n.kind === "folder").length).toBe(1);
   });
+  it("groups same-project sessions under one project node", () => {
+    const mk = (sid: string, project: string): WatchEvent => ({ type: "session", data: { sessionId: sid, project, agentRef: "master", event: { kind: "turn", data: { role: "user", text: "hi" } } } });
+    const g = [mk("s1", "Terra"), mk("s2", "Terra"), mk("s3", "Other")].reduce(reduceWatch, emptyGraph());
+    expect(g.nodes.get("proj:Terra")?.kind).toBe("project");
+    expect(g.edges.has("proj:Terra->s1:master")).toBe(true);
+    expect(g.edges.has("proj:Terra->s2:master")).toBe(true);
+    expect([...g.nodes.values()].filter((n) => n.kind === "project").length).toBe(2); // Terra + Other
+  });
 });
