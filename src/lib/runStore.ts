@@ -1,29 +1,57 @@
 import { createSignal } from "solid-js";
-import { runClaude } from "./claude";
-import { applyWatch, ensureSession, setActiveId } from "./sessionStore";
+import { runClaude, stopClaude } from "./claude";
+import { applyWatch, ensureSession, removeSession, setActiveId, activeId } from "./sessionStore";
 import type { ClaudeEvent, WatchEvent, SessionEvent } from "./types";
 
 const LOCAL_PROJECT = "local run";
+
+export type RunStatus = "idle" | "running" | "done" | "failed" | "stopped";
+
+export interface LocalSession {
+  sid: string;
+  label?: string;
+  cwd?: string;
+  model?: string;
+  claudeSessionId?: string;
+  status: RunStatus;
+  runId?: string;
+}
+
+/** Pure status transition for a session given a streamed event. `stopped` is sticky. */
+export function nextStatus(prev: RunStatus, ev: ClaudeEvent): RunStatus {
+  if (prev === "stopped") return "stopped";
+  switch (ev.type) {
+    case "runError":
+      return "failed";
+    case "result":
+      return ev.data.isError ? "failed" : prev;
+    case "runComplete":
+      return prev === "failed" ? "failed" : "done";
+    default:
+      return prev;
+  }
+}
 
 /** True for any locally-launched session id ("local", "local-2", …). */
 export function isLocalSession(id: string | null | undefined): id is string {
   return !!id && (id === "local" || id.startsWith("local-"));
 }
 
-// Per-session in-flight state, so several local agents can stream at once.
-const [runningSessions, setRunningSessions] = createSignal<Set<string>>(new Set());
+const [localSessions, setLocalSessions] = createSignal<Map<string, LocalSession>>(new Map());
+export { localSessions };
+
 export function isRunning(sid: string): boolean {
-  return runningSessions().has(sid);
+  return localSessions().get(sid)?.status === "running";
 }
 export function anyRunning(): boolean {
-  return runningSessions().size > 0;
+  return [...localSessions().values()].some((s) => s.status === "running");
 }
-function setRunning(sid: string, on: boolean) {
-  setRunningSessions((prev) => {
-    const next = new Set(prev);
-    if (on) next.add(sid);
-    else next.delete(sid);
-    return next;
+
+function updateSession(sid: string, patch: Partial<LocalSession>) {
+  setLocalSessions((prev) => {
+    const cur = prev.get(sid);
+    if (!cur) return prev;
+    return new Map(prev).set(sid, { ...cur, ...patch });
   });
 }
 
@@ -33,6 +61,7 @@ let localCount = 0;
 export function newLocalSession(): string {
   localCount += 1;
   const sid = localCount === 1 ? "local" : `local-${localCount}`;
+  setLocalSessions((prev) => new Map(prev).set(sid, { sid, status: "idle" }));
   ensureSession(sid);
   setActiveId(sid);
   return sid;
@@ -48,8 +77,7 @@ export function cwdLabel(cwd?: string): string {
 }
 
 /** Translate a locally-launched run's ClaudeEvent into a WatchEvent so the app's
- *  own run flows through the same sessionStore pipeline as observed sessions —
- *  appearing as a local session in the Console rail and the Cockpit constellation. */
+ *  own run flows through the same sessionStore pipeline as observed sessions. */
 function toWatch(ev: ClaudeEvent, sid: string, project: string): WatchEvent | null {
   const wrap = (agentRef: string, event: SessionEvent): WatchEvent =>
     ({ type: "session", data: { sessionId: sid, project, agentRef, event } });
@@ -68,23 +96,59 @@ function toWatch(ev: ClaudeEvent, sid: string, project: string): WatchEvent | nu
 }
 
 export async function startRun(sid: string, prompt: string, opts?: { cwd?: string; model?: string }): Promise<void> {
-  if (isRunning(sid) || !prompt.trim()) return;
-  const project = cwdLabel(opts?.cwd);
+  const s = localSessions().get(sid);
+  if (!s || s.status === "running" || !prompt.trim()) return;
+  // Lock cwd/model onto the thread on the first run; ignore opts thereafter.
+  const cwd = s.cwd ?? opts?.cwd;
+  const model = s.model ?? opts?.model;
+  const project = s.label ?? cwdLabel(cwd);
+  const runId = crypto.randomUUID();
+  const resumeId = s.claudeSessionId;
   const turn = (role: string, text: string): WatchEvent =>
     ({ type: "session", data: { sessionId: sid, project, agentRef: "master", event: { kind: "turn", data: { role, text } } } });
-  // Echo the prompt as a user turn in the local session.
+
+  updateSession(sid, { status: "running", runId, cwd, model });
   applyWatch(turn("user", prompt));
-  setRunning(sid, true);
   try {
-    await runClaude(prompt, (ev: ClaudeEvent) => {
+    await runClaude(runId, prompt, (ev: ClaudeEvent) => {
+      if (ev.type === "systemInit") updateSession(sid, { claudeSessionId: ev.data.sessionId });
       const w = toWatch(ev, sid, project);
       if (w) applyWatch(w);
       else if (ev.type === "result" && ev.data.isError) applyWatch(turn("assistant", ev.data.result));
       else if (ev.type === "runError") applyWatch(turn("assistant", ev.data.message));
-      else if (ev.type === "runComplete") setRunning(sid, false);
-    }, opts);
+      const prev = localSessions().get(sid)?.status ?? "running";
+      updateSession(sid, { status: nextStatus(prev, ev) });
+    }, { cwd, model, resumeId });
   } catch (e) {
     applyWatch(turn("assistant", String(e)));
-    setRunning(sid, false);
+    updateSession(sid, { status: "failed" });
   }
+}
+
+export async function stopRun(sid: string): Promise<void> {
+  const s = localSessions().get(sid);
+  if (!s || s.status !== "running" || !s.runId) return;
+  updateSession(sid, { status: "stopped" });
+  await stopClaude(s.runId);
+}
+
+export async function closeSession(sid: string): Promise<void> {
+  const s = localSessions().get(sid);
+  if (!s) return;
+  if (s.status === "running") await stopRun(sid);
+  setLocalSessions((prev) => {
+    if (!prev.has(sid)) return prev;
+    const next = new Map(prev);
+    next.delete(sid);
+    return next;
+  });
+  removeSession(sid);
+  if (activeId() === null) {
+    const fallback = [...localSessions().keys()][0];
+    if (fallback) setActiveId(fallback);
+  }
+}
+
+export function renameSession(sid: string, label: string) {
+  updateSession(sid, { label: label.trim() || undefined });
 }

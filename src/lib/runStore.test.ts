@@ -1,107 +1,212 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 
 const h = vi.hoisted(() => ({
-  autoComplete: true,
+  emit: [] as unknown[],
   lastOnEvent: null as ((e: unknown) => void) | null,
 }));
 
 vi.mock("./claude", () => ({
-  runClaude: vi.fn((_prompt: string, onEvent: (e: unknown) => void) => {
+  runClaude: vi.fn((_runId: string, _prompt: string, onEvent: (e: unknown) => void) => {
     h.lastOnEvent = onEvent;
-    // Optionally drive the run to completion so `isRunning` resets.
-    if (h.autoComplete) onEvent({ type: "runComplete", data: { exitCode: 0 } });
+    for (const e of h.emit) onEvent(e);
     return Promise.resolve();
   }),
+  stopClaude: vi.fn(() => Promise.resolve()),
 }));
 
-import { runClaude } from "./claude";
-import { cwdLabel, startRun, isRunning, newLocalSession } from "./runStore";
+import { runClaude, stopClaude } from "./claude";
+import {
+  cwdLabel,
+  nextStatus,
+  startRun,
+  stopRun,
+  closeSession,
+  renameSession,
+  isRunning,
+  newLocalSession,
+  localSessions,
+} from "./runStore";
+
+const RUNCOMPLETE = { type: "runComplete", data: { exitCode: 0 } };
 
 describe("cwdLabel", () => {
   test("returns the basename of a unix path", () => {
     expect(cwdLabel("/home/u/projects/praetorium")).toBe("praetorium");
   });
-
   test("ignores a trailing slash", () => {
     expect(cwdLabel("/home/u/projects/praetorium/")).toBe("praetorium");
   });
-
   test("handles Windows separators", () => {
     expect(cwdLabel("C:\\Users\\guill\\praetorium")).toBe("praetorium");
   });
-
   test("handles a trailing Windows separator", () => {
     expect(cwdLabel("C:\\Users\\guill\\praetorium\\")).toBe("praetorium");
   });
-
   test("falls back to 'local run' when undefined", () => {
     expect(cwdLabel(undefined)).toBe("local run");
   });
-
   test("falls back to 'local run' for an empty string", () => {
     expect(cwdLabel("")).toBe("local run");
+  });
+});
+
+describe("nextStatus", () => {
+  test("running → done on runComplete", () => {
+    expect(nextStatus("running", { type: "runComplete", data: { exitCode: 0 } } as any)).toBe("done");
+  });
+  test("running → failed on runError", () => {
+    expect(nextStatus("running", { type: "runError", data: { message: "x" } } as any)).toBe("failed");
+  });
+  test("running → failed on errored result", () => {
+    expect(nextStatus("running", { type: "result", data: { isError: true, result: "x" } } as any)).toBe("failed");
+  });
+  test("failed stays failed on a later runComplete", () => {
+    expect(nextStatus("failed", { type: "runComplete", data: { exitCode: 1 } } as any)).toBe("failed");
+  });
+  test("stopped is sticky", () => {
+    expect(nextStatus("stopped", { type: "runComplete", data: { exitCode: -1 } } as any)).toBe("stopped");
+  });
+  test("non-terminal events keep the status", () => {
+    expect(nextStatus("running", { type: "assistantText", data: { text: "hi", parentToolUseId: null } } as any)).toBe("running");
+  });
+});
+
+describe("newLocalSession", () => {
+  test("allocates 'local' first, then suffixed ids, each idle", () => {
+    const a = newLocalSession();
+    expect(a).toBe("local");
+    expect(localSessions().get(a)?.status).toBe("idle");
+    const b = newLocalSession();
+    expect(b).not.toBe("local");
+    expect(b).toMatch(/^local-\d+$/);
   });
 });
 
 describe("startRun", () => {
   beforeEach(() => {
     vi.mocked(runClaude).mockClear();
-    h.autoComplete = true;
+    h.emit = [RUNCOMPLETE];
   });
 
-  test("forwards opts to runClaude", async () => {
-    await startRun("local", "hello", { cwd: "/home/u/proj", model: "opus" });
-    expect(runClaude).toHaveBeenCalledWith("hello", expect.any(Function), {
-      cwd: "/home/u/proj",
-      model: "opus",
-    });
-  });
-
-  test("forwards no opts when omitted", async () => {
-    await startRun("local", "hello");
-    expect(runClaude).toHaveBeenCalledWith("hello", expect.any(Function), undefined);
+  test("forwards opts (no resumeId on first run) and a generated runId", async () => {
+    const sid = newLocalSession();
+    await startRun(sid, "hello", { cwd: "/home/u/proj", model: "opus" });
+    expect(runClaude).toHaveBeenCalledWith(
+      expect.any(String),
+      "hello",
+      expect.any(Function),
+      { cwd: "/home/u/proj", model: "opus", resumeId: undefined },
+    );
   });
 
   test("ignores empty prompts", async () => {
-    await startRun("local", "   ");
+    const sid = newLocalSession();
+    await startRun(sid, "   ");
     expect(runClaude).not.toHaveBeenCalled();
+  });
+
+  test("captures claudeSessionId from systemInit and resumes on the next run", async () => {
+    const sid = newLocalSession();
+    h.emit = [{ type: "systemInit", data: { sessionId: "claude-abc" } }, RUNCOMPLETE];
+    await startRun(sid, "first", { cwd: "/p" });
+    expect(localSessions().get(sid)?.claudeSessionId).toBe("claude-abc");
+
+    vi.mocked(runClaude).mockClear();
+    h.emit = [RUNCOMPLETE];
+    await startRun(sid, "second");
+    expect(runClaude).toHaveBeenCalledWith(
+      expect.any(String),
+      "second",
+      expect.any(Function),
+      { cwd: "/p", model: undefined, resumeId: "claude-abc" },
+    );
+  });
+
+  test("locks cwd/model after the first run", async () => {
+    const sid = newLocalSession();
+    h.emit = [RUNCOMPLETE];
+    await startRun(sid, "first", { cwd: "/locked", model: "opus" });
+    vi.mocked(runClaude).mockClear();
+    await startRun(sid, "second", { cwd: "/ignored", model: "haiku" });
+    expect(runClaude).toHaveBeenCalledWith(
+      expect.any(String),
+      "second",
+      expect.any(Function),
+      { cwd: "/locked", model: "opus", resumeId: undefined },
+    );
+  });
+
+  test("sets status done on completion", async () => {
+    const sid = newLocalSession();
+    h.emit = [RUNCOMPLETE];
+    await startRun(sid, "go");
+    expect(localSessions().get(sid)?.status).toBe("done");
   });
 });
 
 describe("concurrency", () => {
   beforeEach(() => {
     vi.mocked(runClaude).mockClear();
-    h.autoComplete = false; // leave runs in-flight so we can observe running state
+    h.emit = []; // leave runs in-flight (no completion)
   });
 
-  test("marks a session running and blocks a second run on the same session", async () => {
-    await startRun("guard-a", "first");
-    expect(isRunning("guard-a")).toBe(true);
-    await startRun("guard-a", "second");
+  test("marks the session running and blocks a second run on it", async () => {
+    const sid = newLocalSession();
+    await startRun(sid, "first");
+    expect(isRunning(sid)).toBe(true);
+    await startRun(sid, "second");
     expect(runClaude).toHaveBeenCalledTimes(1);
   });
 
-  test("allows different sessions to run concurrently", async () => {
-    await startRun("conc-a", "a");
-    await startRun("conc-b", "b");
-    expect(isRunning("conc-a")).toBe(true);
-    expect(isRunning("conc-b")).toBe(true);
+  test("allows different sessions concurrently", async () => {
+    const a = newLocalSession();
+    const b = newLocalSession();
+    await startRun(a, "a");
+    await startRun(b, "b");
+    expect(isRunning(a)).toBe(true);
+    expect(isRunning(b)).toBe(true);
     expect(runClaude).toHaveBeenCalledTimes(2);
-  });
-
-  test("clears running state on completion", async () => {
-    await startRun("done-a", "go");
-    expect(isRunning("done-a")).toBe(true);
-    h.lastOnEvent?.({ type: "runComplete", data: { exitCode: 0 } });
-    expect(isRunning("done-a")).toBe(false);
   });
 });
 
-describe("newLocalSession", () => {
-  test("allocates 'local' first, then suffixed ids", () => {
-    expect(newLocalSession()).toBe("local");
-    const second = newLocalSession();
-    expect(second).not.toBe("local");
-    expect(second).toMatch(/^local-\d+$/);
+describe("stopRun", () => {
+  beforeEach(() => {
+    vi.mocked(runClaude).mockClear();
+    vi.mocked(stopClaude).mockClear();
+    h.emit = [];
+  });
+
+  test("sets status stopped and calls stopClaude with the runId", async () => {
+    const sid = newLocalSession();
+    await startRun(sid, "go");
+    await stopRun(sid);
+    expect(localSessions().get(sid)?.status).toBe("stopped");
+    expect(stopClaude).toHaveBeenCalledWith(expect.any(String));
+  });
+
+  test("a late runComplete does not flip stopped back to done", async () => {
+    const sid = newLocalSession();
+    await startRun(sid, "go");
+    await stopRun(sid);
+    h.lastOnEvent?.(RUNCOMPLETE);
+    expect(localSessions().get(sid)?.status).toBe("stopped");
+  });
+});
+
+describe("closeSession / renameSession", () => {
+  beforeEach(() => { h.emit = [RUNCOMPLETE]; });
+
+  test("closeSession removes it from localSessions", async () => {
+    const sid = newLocalSession();
+    await closeSession(sid);
+    expect(localSessions().has(sid)).toBe(false);
+  });
+
+  test("renameSession sets and clears the label", () => {
+    const sid = newLocalSession();
+    renameSession(sid, "my run");
+    expect(localSessions().get(sid)?.label).toBe("my run");
+    renameSession(sid, "");
+    expect(localSessions().get(sid)?.label).toBeUndefined();
   });
 });
