@@ -1,4 +1,4 @@
-import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, type SimulationNodeDatum } from "d3-force";
+import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, forceX, forceY, type SimulationNodeDatum } from "d3-force";
 import { stratify, tree } from "d3-hierarchy";
 import type { GraphState } from "./types";
 
@@ -26,6 +26,10 @@ export class RadialForceLayout implements LayoutStrategy {
       .force("link", forceLink(links).id((d: any) => d.id).distance(140))
       .force("center", forceCenter(width / 2, height / 2))
       .force("collide", forceCollide(70)) // keep nodes (and their labels) from overlapping
+      // Gently pull every node toward the middle so DISCONNECTED components (e.g. an
+      // orphan agent cluster) sit close to the rest instead of flying to the corners.
+      .force("x", forceX(width / 2).strength(0.08))
+      .force("y", forceY(height / 2).strength(0.08))
       .stop();
     // Run a fixed number of ticks for a deterministic-enough static layout.
     for (let i = 0; i < 260; i++) sim.tick();
