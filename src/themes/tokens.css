@@ -305,11 +305,16 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 .pr-line-prompt { color: var(--accent); white-space: pre-wrap; font-weight: 500; }
 .pr-line-prompt::before { content: "> "; color: var(--gull-2); }
 .pr-line-asst { color: var(--bone); white-space: pre-wrap; }
-.pr-sub { margin: 10px 0 10px 14px; padding: 2px 0 2px 16px; border-left: 1px solid var(--iron-border-2); }
-.pr-sub-role { font: 500 10px var(--font-mono); color: var(--bone); text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 6px -16px; padding-left: 0; display: inline-flex; align-items: center; gap: 8px; }
-.pr-sub-role::before { content: "↳"; color: var(--accent); font-size: 13px; font-weight: 600; }
+.pr-sub { margin: 10px 0 10px 14px; padding: 2px 0 2px 16px; border-left: 1px solid transparent; }
+.pr-sub.is-open { border-left-color: var(--iron-border-2); }
+.pr-sub-role { font: 500 10px var(--font-mono); color: var(--bone); text-transform: uppercase; letter-spacing: 0.1em; margin: 0 0 6px -16px; padding: 0; background: transparent; border: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: color var(--dur-snap); }
+.pr-sub-role:hover { color: var(--accent); }
+.pr-sub-role::before { content: "↳"; color: var(--accent); font-size: 13px; font-weight: 600; transition: transform var(--dur-snap); }
+.pr-sub.is-open .pr-sub-role::before { transform: rotate(90deg); }
+.pr-sub-name { color: inherit; }
+.pr-sub-meta { font-weight: 400; color: var(--gull-2); letter-spacing: 0.06em; }
 .pr-sub.is-done .pr-sub-role { color: var(--gull); }
-.pr-sub-rows { display: flex; flex-direction: column; gap: 3px; }
+.pr-sub-rows { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
 .pr-sub-line { color: var(--gull); white-space: pre-wrap; padding-left: 14px; position: relative; font-size: 12.5px; }
 .pr-sub-line::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 8px; height: 1px; background: var(--iron-border-2); }
 .pr-sub-line:last-child { color: var(--bone); }
