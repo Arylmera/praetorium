@@ -32,6 +32,11 @@ const nodeLabel = (n: { kind: string; session?: string; label: string; weight?: 
   }
   return truncate(n.kind === "folder" ? folderBase(n.label) : n.label);
 };
+/** Full, untruncated label for the hover tooltip. */
+const fullLabel = (n: { kind: string; session?: string; label: string; weight?: number }) =>
+  n.kind === "master" && n.session
+    ? sessionTitle(n.session) + ((n.weight ?? 1) > 1 ? ` ×${n.weight}` : "")
+    : n.label;
 
 /** A session is visible while it's in the live index (active within ~10 min) — the
  *  local run is always shown. Archived (older) sessions are pruned from the graph. */
@@ -69,7 +74,9 @@ function collapseByTitle(g: GraphState): GraphState {
   const count = new Map<string, number>();
   for (const n of g.nodes.values()) {
     if (n.kind === "master" && n.session) {
-      const gid = `grp:${n.label}:${sessionTitle(n.session)}`; // n.label = project
+      // Normalize the title (trim + 60-char prefix) so the same prompt always groups,
+      // regardless of whether the title came from the 80-char meta or the full transcript.
+      const gid = `grp:${n.label}:${sessionTitle(n.session).trim().slice(0, 60)}`; // n.label = project
       remap.set(n.id, gid);
       count.set(gid, (count.get(gid) ?? 0) + 1);
       if (!nodes.has(gid)) nodes.set(gid, { id: gid, kind: "master", label: n.label, status: "running", session: n.session });
@@ -166,6 +173,7 @@ export function Cockpit() {
           return (
             <Show when={p()}>
               <g>
+                <title>{fullLabel(n)}</title>
                 <circle class="cockpit-node" cx={p()!.x} cy={p()!.y} r={r} fill="var(--panel)" stroke={nodeStroke(n)} stroke-width="2" />
                 <text x={p()!.x + r + 4} y={p()!.y + 4} fill="var(--fg)" style={{ "font-size": "11px" }}>{nodeLabel(n)}</text>
               </g>

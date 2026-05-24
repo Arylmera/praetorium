@@ -111,7 +111,12 @@ export function reduceWatch(prev: GraphState, e: WatchEvent): GraphState {
       if (event.data.filePath) {
         const folderId = dirname(event.data.filePath);
         if (!s.nodes.has(folderId)) s.nodes.set(folderId, { id: folderId, kind: "folder", label: folderId, status: "running" });
-        if (!s.nodes.has(ownerId)) s.nodes.set(ownerId, { id: ownerId, kind: "agent", label: agentRef, status: "running", session: sessionId });
+        if (ownerId !== masterId && !s.nodes.has(ownerId)) {
+          s.nodes.set(ownerId, { id: ownerId, kind: "agent", label: agentRef, status: "running", session: sessionId });
+        }
+        // Always keep a subagent attached to its session master, even if its spawn
+        // event was never seen (e.g. the session predates the watcher) — no orphans.
+        if (ownerId !== masterId) addEdge(s, masterId, ownerId);
         addEdge(s, ownerId, folderId);
         s.activity = [...s.activity, { folderId, ts: Date.now() }];
       }
