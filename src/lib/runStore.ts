@@ -9,12 +9,21 @@ const LOCAL_PROJECT = "local run";
 const [running, setRunning] = createSignal(false);
 export { running };
 
+/** Derive the local session's project label from the chosen cwd: its basename,
+ *  or "local run" when no cwd is set. Tolerates trailing and Windows separators. */
+export function cwdLabel(cwd?: string): string {
+  if (!cwd) return LOCAL_PROJECT;
+  const trimmed = cwd.replace(/[/\\]+$/, "");
+  const base = trimmed.split(/[/\\]/).pop();
+  return base || LOCAL_PROJECT;
+}
+
 /** Translate a locally-launched run's ClaudeEvent into a WatchEvent so the app's
  *  own run flows through the same sessionStore pipeline as observed sessions —
  *  appearing as a "local" session in the Console rail and the Cockpit constellation. */
-function toWatch(ev: ClaudeEvent): WatchEvent | null {
+function toWatch(ev: ClaudeEvent, project: string): WatchEvent | null {
   const wrap = (agentRef: string, event: SessionEvent): WatchEvent =>
-    ({ type: "session", data: { sessionId: LOCAL_SID, project: LOCAL_PROJECT, agentRef, event } });
+    ({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef, event } });
   switch (ev.type) {
     case "assistantText":
       return wrap(ev.data.parentToolUseId ?? "master", { kind: "turn", data: { role: "assistant", text: ev.data.text } });
@@ -29,23 +38,24 @@ function toWatch(ev: ClaudeEvent): WatchEvent | null {
   }
 }
 
-export async function startRun(prompt: string): Promise<void> {
+export async function startRun(prompt: string, opts?: { cwd?: string; model?: string }): Promise<void> {
   if (running() || !prompt.trim()) return;
+  const project = cwdLabel(opts?.cwd);
   // Echo the prompt as a user turn in the local session.
-  applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project: LOCAL_PROJECT, agentRef: "master", event: { kind: "turn", data: { role: "user", text: prompt } } } });
+  applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef: "master", event: { kind: "turn", data: { role: "user", text: prompt } } } });
   setRunning(true);
   try {
     await runClaude(prompt, (ev: ClaudeEvent) => {
-      const w = toWatch(ev);
+      const w = toWatch(ev, project);
       if (w) applyWatch(w);
       else if (ev.type === "result" && ev.data.isError) {
-        applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project: LOCAL_PROJECT, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: ev.data.result } } } });
+        applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: ev.data.result } } } });
       } else if (ev.type === "runError") {
-        applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project: LOCAL_PROJECT, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: ev.data.message } } } });
+        applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: ev.data.message } } } });
       } else if (ev.type === "runComplete") setRunning(false);
-    });
+    }, opts);
   } catch (e) {
-    applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project: LOCAL_PROJECT, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: String(e) } } } });
+    applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: String(e) } } } });
     setRunning(false);
   }
 }

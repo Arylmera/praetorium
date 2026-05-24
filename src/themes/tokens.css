@@ -322,6 +322,14 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 .pr-caret { display: inline-block; width: .55ch; height: 1.1em; background: var(--accent); vertical-align: -2px; animation: pr-blink 1s steps(2) infinite; }
 
 .pr-inputbar { display: grid; grid-template-columns: 1fr auto; border-top: 1px solid var(--iron-border); background: var(--panel); }
+.pr-launch-opts { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--space-2); padding: 8px 14px; border-bottom: 1px solid var(--iron-border); }
+.pr-cwd-chip { display: inline-flex; align-items: center; gap: 8px; background: var(--panel-2); border: 1px solid var(--iron-border); border-radius: var(--radius-sm); color: var(--bone); padding: 4px 10px; cursor: pointer; font: 500 11px var(--font-mono); transition: border-color var(--dur-snap), color var(--dur-snap); }
+.pr-cwd-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.pr-cwd-chip:disabled { color: var(--gull); cursor: default; }
+.pr-cwd-clear { color: var(--gull); font-size: 13px; line-height: 1; padding: 0 2px; cursor: pointer; }
+.pr-cwd-clear:hover { color: var(--bad); }
+.pr-model-select { background: var(--panel-2); border: 1px solid var(--iron-border); border-radius: var(--radius-sm); color: var(--bone); padding: 4px 8px; font: 500 11px var(--font-mono); cursor: pointer; }
+.pr-model-select:disabled { color: var(--gull); cursor: default; }
 .pr-input-wrap { display: flex; align-items: center; gap: 10px; padding: 0 14px; }
 .pr-input-ps { font: 500 13px var(--font-mono); color: var(--accent); flex: 0 0 auto; }
 .pr-input { flex: 1; background: transparent; color: var(--bone); border: 0; padding: 14px 4px; font: 400 13px var(--font-mono); outline: none; }

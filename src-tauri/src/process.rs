@@ -13,6 +13,29 @@ pub fn sanitized_env<I: IntoIterator<Item = (String, String)>>(vars: I) -> Vec<(
         .collect()
 }
 
+/// A planned `claude` invocation: the CLI args plus an optional working dir.
+pub struct ClaudeInvocation {
+    pub args: Vec<String>,
+    pub cwd: Option<String>,
+}
+
+/// Build the `claude` arg vector + working dir from the run options. `--model`
+/// is appended only when a model is chosen; `cwd` is carried through untouched.
+pub fn plan_claude(prompt: &str, cwd: Option<String>, model: Option<String>) -> ClaudeInvocation {
+    let mut args = vec![
+        "-p".to_string(),
+        prompt.to_string(),
+        "--output-format".to_string(),
+        "stream-json".to_string(),
+        "--verbose".to_string(),
+    ];
+    if let Some(model) = model {
+        args.push("--model".to_string());
+        args.push(model);
+    }
+    ClaudeInvocation { args, cwd }
+}
+
 /// Spawn `claude -p <prompt> --output-format stream-json` and stream parsed
 /// events to the frontend through `on_event`. Returns once spawning is done;
 /// streaming continues on a background task.
@@ -20,14 +43,21 @@ pub fn sanitized_env<I: IntoIterator<Item = (String, String)>>(vars: I) -> Vec<(
 pub async fn run_claude(
     app: AppHandle,
     prompt: String,
+    cwd: Option<String>,
+    model: Option<String>,
     on_event: Channel<ClaudeEvent>,
 ) -> Result<(), String> {
+    let plan = plan_claude(&prompt, cwd, model);
     let shell = app.shell();
-    let (mut rx, _child) = shell
+    let mut command = shell
         .command("claude")
-        .args(["-p", &prompt, "--output-format", "stream-json", "--verbose"])
+        .args(plan.args)
         .env_clear()
-        .envs(sanitized_env(std::env::vars()))
+        .envs(sanitized_env(std::env::vars()));
+    if let Some(dir) = plan.cwd {
+        command = command.current_dir(dir);
+    }
+    let (mut rx, _child) = command
         .spawn()
         .map_err(|e| format!("failed to spawn claude: {e}"))?;
 
@@ -58,7 +88,38 @@ pub async fn run_claude(
 
 #[cfg(test)]
 mod tests {
-    use super::sanitized_env;
+    use super::{plan_claude, sanitized_env};
+
+    #[test]
+    fn includes_model_arg_only_when_provided() {
+        let with = plan_claude("hi", None, Some("opus".to_string()));
+        assert!(with
+            .args
+            .windows(2)
+            .any(|w| w[0] == "--model" && w[1] == "opus"));
+
+        let without = plan_claude("hi", None, None);
+        assert!(!without.args.iter().any(|a| a == "--model"));
+    }
+
+    #[test]
+    fn sets_cwd_only_when_provided() {
+        let with = plan_claude("hi", Some("/tmp/proj".to_string()), None);
+        assert_eq!(with.cwd, Some("/tmp/proj".to_string()));
+
+        let without = plan_claude("hi", None, None);
+        assert_eq!(without.cwd, None);
+    }
+
+    #[test]
+    fn always_includes_base_args() {
+        let plan = plan_claude("do thing", None, None);
+        assert_eq!(
+            plan.args,
+            vec!["-p", "do thing", "--output-format", "stream-json", "--verbose"]
+        );
+    }
+
     #[test]
     fn strips_nested_session_vars_keeps_path() {
         let input = vec![

@@ -5,8 +5,9 @@ import type { ClaudeEvent } from "./types";
 export async function runClaude(
   prompt: string,
   onEvent: (event: ClaudeEvent) => void,
+  opts?: { cwd?: string; model?: string },
 ): Promise<void> {
   const channel = new Channel<ClaudeEvent>();
   channel.onmessage = onEvent;
-  await invoke("run_claude", { prompt, onEvent: channel });
+  await invoke("run_claude", { prompt, cwd: opts?.cwd, model: opts?.model, onEvent: channel });
 }
