@@ -36,7 +36,11 @@ export function MapView() {
 
   const [zoom, setZoom] = createSignal(1);
   const [pan, setPan] = createSignal({ x: 0, y: 0 });
-  const [hover, setHover] = createSignal<{ x: number; y: number; text: string } | null>(null);
+  const [hover, setHover] = createSignal<{ x: number; y: number; title: string; sub: string } | null>(null);
+  const subFor = (n: { kind: string; id: string; label: string }) =>
+    n.kind === "folder" ? `${VAULT}\\${n.label}`
+    : n.id.startsWith("hub:") ? n.id.split(":").slice(2).join(":") // hub slug
+    : "";
   let svgEl: SVGSVGElement | undefined;
 
   const viewBox = createMemo(() => {
@@ -87,8 +91,8 @@ export function MapView() {
             return (
               <Show when={p()}>
                 <g style={{ cursor: "pointer" }}
-                  onMouseEnter={(e) => setHover({ x: e.clientX, y: e.clientY, text: n.label })}
-                  onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY, text: n.label })}
+                  onMouseEnter={(e) => setHover({ x: e.clientX, y: e.clientY, title: n.label, sub: subFor(n) })}
+                  onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY, title: n.label, sub: subFor(n) })}
                   onMouseLeave={() => setHover(null)}>
                   <circle cx={p()!.x} cy={p()!.y} r={r} fill="var(--panel)" stroke="var(--accent)" stroke-width="2" />
                   <text x={p()!.x + r + 5} y={p()!.y + 4} fill="var(--fg)" style={{ "font-size": "13px" }}>{n.label}</text>
@@ -102,7 +106,10 @@ export function MapView() {
             "max-width": "420px", background: "var(--panel)", border: "1px solid var(--accent)", "border-radius": "5px",
             padding: "6px 9px", "font-size": "12px", color: "var(--fg)", "white-space": "pre-wrap",
             "pointer-events": "none", "box-shadow": "0 4px 14px rgba(0,0,0,.5)" }}>
-            {hover()!.text}
+            <div>{hover()!.title}</div>
+            <Show when={hover()!.sub}>
+              <div style={{ "font-size": "11px", color: "var(--accent-dim)", "margin-top": "2px" }}>{hover()!.sub}</div>
+            </Show>
           </div>
         </Show>
       </Show>
