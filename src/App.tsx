@@ -22,12 +22,11 @@ function App() {
   const [view, setView] = createSignal<View>("console");
   // Enforce frameless chrome at runtime — guarantees no native title bar even if
   // the embedded tauri.conf.json decorations flag is stale in an incremental build.
-  onMount(async () => {
+  onMount(() => {
     if (!("__TAURI_INTERNALS__" in window || "__TAURI__" in window)) return;
-    try {
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      await getCurrentWindow().setDecorations(false);
-    } catch { /* not in a Tauri window */ }
+    import("@tauri-apps/api/window")
+      .then((m) => m.getCurrentWindow().setDecorations(false))
+      .catch(() => { /* not in a Tauri window */ });
   });
   applyReduceMotion();
   watchSessions(applyWatch);

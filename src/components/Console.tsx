@@ -14,6 +14,28 @@ export function Console() {
   };
   async function submit(e: Event) { e.preventDefault(); const p = prompt(); setPrompt(""); await startRun(p); }
 
+  // Collapse consecutive lines from the same agent into one block so a subagent
+  // renders as a single tree branch with its rows nested beneath, instead of
+  // repeating the header on every line.
+  type Block =
+    | { kind: "master"; lines: { role: string; text: string }[] }
+    | { kind: "sub"; agentRef: string; lines: { role: string; text: string }[] };
+  const blocks = (): Block[] => {
+    const out: Block[] = [];
+    for (const l of active()?.lines ?? []) {
+      const isSub = l.agentRef !== "master";
+      const last = out[out.length - 1];
+      if (isSub) {
+        if (last && last.kind === "sub" && last.agentRef === l.agentRef) last.lines.push(l);
+        else out.push({ kind: "sub", agentRef: l.agentRef, lines: [l] });
+      } else {
+        if (last && last.kind === "master") last.lines.push(l);
+        else out.push({ kind: "master", lines: [l] });
+      }
+    }
+    return out;
+  };
+
   return (
     <div class="pr-console-grid">
       {/* live sessions */}
@@ -51,20 +73,24 @@ export function Console() {
 
         <div class="pr-stream">
           <Show when={active()}>
-            <For each={active()!.lines}>{(l) => {
-              const isSub = l.agentRef !== "master";
-              const subName = () => subagentTypes().get(`${activeId()}:${l.agentRef}`) ?? l.agentRef;
-              return (
-                <Show when={isSub} fallback={
+            <For each={blocks()}>{(b) => (
+              <Show when={b.kind === "sub"} fallback={
+                <For each={b.lines}>{(l) => (
                   <div class={l.role === "user" ? "pr-line pr-line-prompt" : "pr-line pr-line-asst"}>{l.text}</div>
-                }>
-                  <div class="pr-sub">
-                    <div class="pr-sub-role">{subName()}</div>
-                    <div class="pr-sub-body">{l.text}</div>
+                )}</For>
+              }>
+                <div class="pr-sub">
+                  <div class="pr-sub-role">
+                    {subagentTypes().get(`${activeId()}:${(b as { agentRef: string }).agentRef}`) ?? (b as { agentRef: string }).agentRef}
                   </div>
-                </Show>
-              );
-            }}</For>
+                  <div class="pr-sub-rows">
+                    <For each={b.lines}>{(l) => (
+                      <div class={l.role === "user" ? "pr-sub-line pr-sub-line-prompt" : "pr-sub-line"}>{l.text}</div>
+                    )}</For>
+                  </div>
+                </div>
+              </Show>
+            )}</For>
           </Show>
         </div>
 
