@@ -1,5 +1,5 @@
 import { createMemo, For, Show, untrack } from "solid-js";
-import { graph, metas } from "../lib/sessionStore";
+import { graph, metas, sessions } from "../lib/sessionStore";
 import { RadialForceLayout, HierarchicalLayout, type LayoutStrategy } from "../lib/layout";
 import { layoutName } from "../lib/settings";
 
@@ -15,8 +15,16 @@ const nodeStroke = (n: { kind: string; status: string; session?: string }) =>
   : n.kind === "folder" ? "var(--accent-dim)"
   : n.session ? `hsl(${hue(n.session)},70%,60%)` : "var(--accent)";
 const truncate = (s: string, n = 24) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+/** Session title: prefer the indexed meta title, else the first user prompt we've
+ *  streamed for this session, else a short id — never the project (avoids "Terra" dupes). */
+const sessionTitle = (sid: string): string => {
+  const m = metas().get(sid)?.title;
+  if (m && m !== sid) return m;
+  const first = sessions().get(sid)?.lines.find((l) => l.role === "user")?.text;
+  return first ?? sid.slice(0, 6);
+};
 const nodeLabel = (n: { kind: string; session?: string; label: string }) =>
-  truncate(n.kind === "master" && n.session ? (metas().get(n.session)?.title ?? n.label) : n.label);
+  truncate(n.kind === "master" && n.session ? sessionTitle(n.session) : n.label);
 
 export function Cockpit() {
   // Topology key: changes only when nodes/edges change, NOT on activity pings.
