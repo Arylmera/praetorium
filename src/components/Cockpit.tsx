@@ -1,4 +1,4 @@
-import { createMemo, For, untrack } from "solid-js";
+import { createMemo, For, Show, untrack } from "solid-js";
 import { graph, metas } from "../lib/sessionStore";
 import { RadialForceLayout, HierarchicalLayout, type LayoutStrategy } from "../lib/layout";
 import { layoutName } from "../lib/settings";
@@ -35,21 +35,29 @@ export function Cockpit() {
     <div style={{ height: "100%", overflow: "hidden" }}>
       <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
         <For each={[...graph().edges.values()]}>{(e) => {
-          const a = positions().get(e.source); const b = positions().get(e.target);
-          return a && b ? <line class="cockpit-edge" x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--border)" stroke-width="1.5" /> : null;
+          // Accessors so endpoints re-track positions() on layout change (no remount needed).
+          const a = () => positions().get(e.source);
+          const b = () => positions().get(e.target);
+          return (
+            <Show when={a() && b()}>
+              <line class="cockpit-edge" x1={a()!.x} y1={a()!.y} x2={b()!.x} y2={b()!.y} stroke="var(--border)" stroke-width="1.5" />
+            </Show>
+          );
         }}</For>
         <For each={graph().activity.slice(-12)}>{(ping) => {
-          const p = positions().get(ping.folderId); if (!p) return null;
-          return <circle class="cockpit-ring" cx={p.x} cy={p.y} r="8" />;
+          const p = () => positions().get(ping.folderId);
+          return <Show when={p()}><circle class="cockpit-ring" cx={p()!.x} cy={p()!.y} r="8" /></Show>;
         }}</For>
         <For each={[...graph().nodes.values()]}>{(n) => {
-          const p = positions().get(n.id); if (!p) return null;
+          const p = () => positions().get(n.id);
           const r = (n.kind === "master" || n.kind === "project") ? 14 : n.kind === "agent" ? 10 : 7;
           return (
-            <g>
-              <circle class="cockpit-node" cx={p.x} cy={p.y} r={r} fill="var(--panel)" stroke={nodeStroke(n)} stroke-width="2" />
-              <text x={p.x + r + 4} y={p.y + 4} fill="var(--fg)" style={{ "font-size": "11px" }}>{nodeLabel(n)}</text>
-            </g>
+            <Show when={p()}>
+              <g>
+                <circle class="cockpit-node" cx={p()!.x} cy={p()!.y} r={r} fill="var(--panel)" stroke={nodeStroke(n)} stroke-width="2" />
+                <text x={p()!.x + r + 4} y={p()!.y + 4} fill="var(--fg)" style={{ "font-size": "11px" }}>{nodeLabel(n)}</text>
+              </g>
+            </Show>
           );
         }}</For>
       </svg>
