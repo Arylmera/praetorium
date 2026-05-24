@@ -1,4 +1,4 @@
-import type { ClaudeEvent, GraphState, WatchEvent } from "./types";
+import type { ClaudeEvent, GraphEdge, GraphState, WatchEvent } from "./types";
 
 export const MASTER_ID = "__master__";
 
@@ -82,6 +82,17 @@ export function reduce(prev: GraphState, ev: ClaudeEvent): GraphState {
 }
 
 const sessionMaster = (sid: string) => `${sid}:master`;
+
+/** Pure: drop every node owned by `sessionId` (its master + agents, tagged via
+ *  `node.session`) and any edge touching them. Shared project/folder nodes and
+ *  global folder-activity stay — other sessions may still reference them. */
+export function clearSession(prev: GraphState, sessionId: string): GraphState {
+  const nodes = new Map(prev.nodes);
+  for (const [id, n] of prev.nodes) if (n.session === sessionId) nodes.delete(id);
+  const edges = new Map<string, GraphEdge>();
+  for (const [id, e] of prev.edges) if (nodes.has(e.source) && nodes.has(e.target)) edges.set(id, e);
+  return { nodes, edges, activity: prev.activity };
+}
 
 /** Fold a WatchEvent into the shared constellation graph.
  *  Agent/master nodes are namespaced per session; folder nodes are GLOBAL

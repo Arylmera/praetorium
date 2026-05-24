@@ -32,6 +32,9 @@ pub fn line_to_turn(line: &str) -> Option<Turn> {
                     Some("text") => b.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()),
                     Some("tool_use") => {
                         let name = b.get("name").and_then(|n| n.as_str()).unwrap_or("tool");
+                        // Subagent spawns render as their own named branch; skip the
+                        // redundant "[Agent]" placeholder here.
+                        if name == "Agent" || name == "Task" { return None; }
                         let fp = b.get("input").and_then(|i| i.get("file_path")).and_then(|s| s.as_str());
                         Some(match fp { Some(p) => format!("[{name} {p}]"), None => format!("[{name}]") })
                     }
