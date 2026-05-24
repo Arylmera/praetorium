@@ -1,10 +1,13 @@
 import { For, Show, createSignal, onCleanup } from "solid-js";
+import { open } from "@tauri-apps/plugin-dialog";
 import { sessions, insights, activeId, setActiveId, metas, subagentTypes } from "../lib/sessionStore";
 import { failures, type ToolCall } from "../lib/insightsStore";
-import { startRun, running } from "../lib/runStore";
+import { startRun, running, cwdLabel } from "../lib/runStore";
 
 export function Console() {
   const [prompt, setPrompt] = createSignal("");
+  const [cwd, setCwd] = createSignal<string | undefined>(undefined);
+  const [model, setModel] = createSignal("default");
   const [timelineOpen, setTimelineOpen] = createSignal(true);
   // 1s heartbeat so open-ended (running) bars keep growing between watch events.
   const [now, setNow] = createSignal(Date.now());
@@ -49,7 +52,18 @@ export function Console() {
     if (!id) return "";
     return metas().get(id)?.title ?? sessions().get(id)?.project ?? id.slice(0, 8);
   };
-  async function submit(e: Event) { e.preventDefault(); const p = prompt(); setPrompt(""); await startRun(p); }
+  async function submit(e: Event) {
+    e.preventDefault();
+    const p = prompt();
+    setPrompt("");
+    const m = model();
+    await startRun(p, { cwd: cwd(), model: m === "default" ? undefined : m });
+  }
+  async function pickCwd() {
+    if (running()) return;
+    const picked = await open({ directory: true, multiple: false });
+    if (typeof picked === "string") setCwd(picked);
+  }
 
   // Collapse consecutive lines from the same agent into one block so a subagent
   // renders as a single tree branch with its rows nested beneath, instead of
@@ -187,6 +201,23 @@ export function Console() {
         </Show>
 
         <form class="pr-inputbar" onSubmit={submit}>
+          <div class="pr-launch-opts">
+            <button type="button" class="pr-cwd-chip" onClick={pickCwd} disabled={running()}
+              title={cwd() ?? "run in app's working directory"}>
+              <span class="pr-cwd-label">{cwd() ? cwdLabel(cwd()) : "cwd: default"}</span>
+              <Show when={cwd()}>
+                <span class="pr-cwd-clear" role="button" aria-label="clear working directory"
+                  onClick={(e) => { e.stopPropagation(); if (!running()) setCwd(undefined); }}>×</span>
+              </Show>
+            </button>
+            <select class="pr-model-select" value={model()} disabled={running()}
+              onChange={(e) => setModel(e.currentTarget.value)}>
+              <option value="default">default</option>
+              <option value="opus">opus</option>
+              <option value="sonnet">sonnet</option>
+              <option value="haiku">haiku</option>
+            </select>
+          </div>
           <div class="pr-input-wrap">
             <span class="pr-input-ps">$</span>
             <input class="pr-input" value={prompt()} onInput={(e) => setPrompt(e.currentTarget.value)}
