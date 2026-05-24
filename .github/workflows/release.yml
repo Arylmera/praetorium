@@ -16,6 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     # Skip the run triggered by the version-bump commit itself.
     if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      release_id: ${{ steps.create.outputs.release_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,19 +55,77 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump version and tag
+      - name: Bump version (package.json + tauri.conf.json) and tag
         id: version
         run: |
-          new=$(npm version ${{ steps.bump.outputs.level }} -m "chore(release): %s")
-          echo "tag=$new" >> "$GITHUB_OUTPUT"
-
-      - name: Push commit and tag
-        run: git push --follow-tags origin master
+          ver=$(npm version ${{ steps.bump.outputs.level }} --no-git-tag-version)
+          ver=${ver#v}
+          node -e "const f='src-tauri/tauri.conf.json',j=require('./'+f);j.version='$ver';require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
+          git add package.json package-lock.json src-tauri/tauri.conf.json
+          git commit -m "chore(release): v$ver"
+          git tag "v$ver"
+          git push --follow-tags origin master
+          echo "tag=v$ver" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
+        id: create
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
             --generate-notes
+          id=$(gh api "repos/${{ github.repository }}/releases/tags/${{ steps.version.outputs.tag }}" --jq .id)
+          echo "release_id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+            rust_target: aarch64-apple-darwin
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+            rust_target: x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            args: ""
+            rust_target: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            build-essential curl wget file libxdo-dev libssl-dev libgtk-3-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build and upload Tauri bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ needs.release.outputs.release_id }}
+          args: ${{ matrix.args }}
