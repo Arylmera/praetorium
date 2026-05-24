@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { reduceWatch, emptyGraph } from "./graph";
+import { reduceWatch, emptyGraph, clearSession as clearGraphSession } from "./graph";
 import { reduceInsights, emptyInsights } from "./insightsStore";
 import type { InsightsState } from "./insightsStore";
 import type { WatchEvent, GraphState, LiveSessionMeta } from "./types";
@@ -10,12 +10,27 @@ export type TranscriptLine = { agentRef: string; role: string; text: string };
 const [sessions, setSessions] = createSignal<Map<string, { project?: string; lines: TranscriptLine[] }>>(new Map());
 const [graph, setGraph] = createSignal<GraphState>(emptyGraph());
 const [insights, setInsights] = createSignal<InsightsState>(emptyInsights());
-const [activeId, setActiveId] = createSignal<string | null>(null);
+// Default focus is the synthetic local console so its input shows on load and
+// an externally-observed session arriving first doesn't steal focus (and hide it).
+const [activeId, setActiveId] = createSignal<string | null>("local");
 const [metas, setMetas] = createSignal<Map<string, LiveSessionMeta>>(new Map());
 // `${sessionId}:${toolUseId}` -> subagent type, so the Console can name nested agents.
 const [subagentTypes, setSubagentTypes] = createSignal<Map<string, string>>(new Map());
 
 export { sessions, graph, insights, activeId, setActiveId, metas, subagentTypes };
+
+/** Wipe one session from every live store (transcript, insights, subagent names,
+ *  constellation graph). Used by the Console's NEW button to reset the local run. */
+export function clearSession(id: string): void {
+  setSessions((prev) => { const next = new Map(prev); next.delete(id); return next; });
+  setInsights((prev) => { const next = new Map(prev); next.delete(id); return next; });
+  setSubagentTypes((prev) => {
+    const next = new Map(prev);
+    for (const k of prev.keys()) if (k.startsWith(`${id}:`)) next.delete(k);
+    return next;
+  });
+  setGraph((g) => clearGraphSession(g, id));
+}
 
 export async function refreshMetas(): Promise<void> {
   const list = await listLiveSessions();
