@@ -6,6 +6,7 @@ import { Explorer } from "./components/Explorer";
 import { Settings } from "./components/Settings";
 import { WindowControls } from "./components/WindowControls";
 import { AmbientCanvas } from "./components/AmbientCanvas";
+import { SpecialChrome } from "./components/SpecialChrome";
 import { ViewSwitcher, type View } from "./components/ViewSwitcher";
 
 const ROUTES: Record<View, () => any> = {
@@ -14,7 +15,7 @@ const ROUTES: Record<View, () => any> = {
   explorer: Explorer,
   settings: Settings,
 };
-import { theme } from "./themes/theme";
+import { theme, themedCopy } from "./themes/theme";
 import { applyReduceMotion, layoutName, setLayout, glass } from "./lib/settings";
 import { applyWatch, refreshMetas } from "./lib/sessionStore";
 import { watchSessions } from "./lib/sessions";
@@ -42,9 +43,9 @@ function App() {
       <header class="pr-topbar" data-tauri-drag-region="">
         <div class="pr-prompt" data-tauri-drag-region="">
           <span class="pr-brand-dot" />
-          <span class="pr-prompt-path">~/git/Terra</span>
-          <span class="pr-prompt-ps1">$</span>
-          <span class="pr-prompt-cmd">praetorium</span>
+          <span class="pr-prompt-path">{themedCopy()?.path ?? "~/git/Terra"}</span>
+          <span class="pr-prompt-ps1">{themedCopy()?.ps1 ?? "$"}</span>
+          <span class="pr-prompt-cmd">{themedCopy()?.cmd ?? "praetorium"}</span>
           <span class="pr-prompt-flag">--view=</span><span class="pr-prompt-val">{view()}</span>
           <span class="pr-prompt-flag">--layout=</span><span class="pr-prompt-val">{layoutName()}</span>
           <span class="pr-prompt-cursor">▍</span>
@@ -61,6 +62,9 @@ function App() {
           <WindowControls />
         </div>
       </header>
+
+      {/* Per-theme banner strip (+ cockpit HUD) — special themes only */}
+      <SpecialChrome />
 
       {/* ===== MAIN ===== keyed wrapper retriggers the route-enter transition per view */}
       <main style={{ flex: "1", "min-height": "0", display: "flex", "flex-direction": "column", padding: "16px 20px 0" }}>
