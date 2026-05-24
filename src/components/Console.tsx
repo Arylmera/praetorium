@@ -2,7 +2,7 @@ import { For, Show, createSignal, onCleanup } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { sessions, insights, activeId, setActiveId, metas, subagentTypes, type TranscriptLine } from "../lib/sessionStore";
 import { failures, type ToolCall } from "../lib/insightsStore";
-import { startRun, running, cwdLabel, localSessionId, resetLocal } from "../lib/runStore";
+import { startRun, stopRun, closeSession, renameSession, isRunning, newLocalSession, isLocalSession, localSessions, cwdLabel } from "../lib/runStore";
 
 export function Console() {
   const [prompt, setPrompt] = createSignal("");
@@ -15,19 +15,17 @@ export function Console() {
   onCleanup(() => clearInterval(tick));
   let streamRef: HTMLDivElement | undefined;
 
-  // The synthetic local card is ALWAYS present (even before the first run) so its
-  // input stays reachable; then live observed sessions (in the index, active within
-  // ~10 min) — minus the watcher's re-discovery of our own local run (same transcript,
-  // real id), which would otherwise duplicate the local card.
-  const list = (): [string, { project?: string; lines: TranscriptLine[] }][] => {
-    const map = sessions();
-    const out: [string, { project?: string; lines: TranscriptLine[] }][] = [
-      ["local", map.get("local") ?? { project: cwdLabel(cwd()), lines: [] }],
-    ];
-    for (const [id, s] of map) if (id !== "local" && metas().has(id) && id !== localSessionId()) out.push([id, s]);
-    return out;
-  };
+  // Show only live sessions (in the index, active within ~10 min) + local runs; hide archived.
+  const list = () => [...sessions().entries()].filter(([id]) => isLocalSession(id) || metas().has(id));
   const active = () => (activeId() ? sessions().get(activeId()!) : undefined);
+  // Disable the input/RUN only when the *active* local session is itself in-flight,
+  // so other sessions can keep running concurrently.
+  const activeRunning = () => { const id = activeId(); return isLocalSession(id) && isRunning(id); };
+  const [renaming, setRenaming] = createSignal<string | null>(null);
+  const sess = (id: string) => localSessions().get(id);
+  const activeSess = () => { const id = activeId(); return isLocalSession(id) ? sess(id) : undefined; };
+  const canContinue = () => !!activeSess()?.claudeSessionId;
+  const locked = () => { const s = activeSess(); return !!(s && (s.cwd !== undefined || s.model !== undefined) && s.status !== "idle"); };
 
   // ---- Run Insights: tool-call timeline + failure radar ----
   const calls = (id: string | null): ToolCall[] => (id ? insights().get(id) ?? [] : []);
@@ -93,12 +91,17 @@ export function Console() {
   async function submit(e: Event) {
     e.preventDefault();
     const p = prompt();
+    if (!p.trim()) return;
     setPrompt("");
     const m = model();
-    await startRun(p, { cwd: cwd(), model: m === "default" ? undefined : m });
+    // Launch into the active local session, or spin up a fresh one if the
+    // current selection is an observed (non-local) session or none.
+    const id = activeId();
+    const sid = isLocalSession(id) ? id : newLocalSession();
+    await startRun(sid, p, { cwd: cwd(), model: m === "default" ? undefined : m });
   }
   async function pickCwd() {
-    if (running()) return;
+    if (activeRunning()) return;
     const picked = await open({ directory: true, multiple: false });
     if (typeof picked === "string") setCwd(picked);
   }
@@ -147,7 +150,7 @@ export function Console() {
       const l = master[i];
       if (l.role === "user") continue;
       const next = master[i + 1];
-      if (!next) { if (!running()) set.add(l); }
+      if (!next) { if (!activeRunning()) set.add(l); }
       else if (next.role === "user") set.add(l);
     }
     return set;
@@ -160,16 +163,53 @@ export function Console() {
         <div class="pr-sessions-head">
           <span class="pr-sessions-title">LIVE SESSIONS</span>
           <span class="pr-sessions-sub">{list().length} active</span>
+          <button class="pr-new-session" type="button" onClick={() => newLocalSession()}
+            title="start a new local session">+ NEW</button>
         </div>
         <div class="pr-sessions-list">
           <For each={list()}>{([id, s]) => {
             const m = () => metas().get(id);
+            const status = () => sess(id)?.status;
+            const bulletCls = () => {
+              if (failCount(id) > 0) return " is-failed";
+              const st = status();
+              return st ? ` is-${st}` : "";
+            };
             return (
               <div class={`pr-session${id === activeId() ? " is-active" : ""}`} onClick={() => setActiveId(id)} title={id}>
-                <span class={`pr-session-bullet${failCount(id) > 0 ? " is-failed" : ""}`} />
-                <span class="pr-session-title">{m()?.title ?? s.project ?? id.slice(0, 8)}</span>
-                <span class="pr-session-time">{id === "local" ? "now" : ""}</span>
-                <span class="pr-session-project">{m()?.project ?? s.project ?? ""}</span>
+                <span class={`pr-session-bullet${bulletCls()}`} />
+                <Show
+                  when={renaming() === id}
+                  fallback={
+                    <span class="pr-session-title" onDblClick={(e) => { e.stopPropagation(); setRenaming(id); }}>
+                      {sess(id)?.label ?? m()?.title ?? s.project ?? id.slice(0, 8)}
+                    </span>
+                  }
+                >
+                  <input
+                    class="pr-session-rename"
+                    autofocus
+                    value={sess(id)?.label ?? ""}
+                    onClick={(e) => e.stopPropagation()}
+                    onBlur={(e) => { renameSession(id, e.currentTarget.value); setRenaming(null); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { renameSession(id, e.currentTarget.value); setRenaming(null); }
+                      else if (e.key === "Escape") setRenaming(null);
+                    }}
+                  />
+                </Show>
+                <span class="pr-session-time">{isLocalSession(id) ? (status() === "running" ? "live" : "now") : ""}</span>
+                <Show when={isLocalSession(id) && status() === "running"}>
+                  <button class="pr-session-stop" type="button" title="stop run"
+                    onClick={(e) => { e.stopPropagation(); void stopRun(id); }}>■</button>
+                </Show>
+                <Show when={isLocalSession(id)}>
+                  <button class="pr-session-close" type="button" title="close session"
+                    onClick={(e) => { e.stopPropagation(); void closeSession(id); }}>×</button>
+                </Show>
+                <Show when={!isLocalSession(id)}>
+                  <span class="pr-session-project">{m()?.project ?? s.project ?? ""}</span>
+                </Show>
               </div>
             );
           }}</For>
@@ -276,40 +316,46 @@ export function Console() {
           </div>
         </Show>
 
-        {/* The input belongs to the local console only; observed sessions are read-only. */}
-        <Show when={activeId() === "local"}>
         <form class="pr-inputbar" onSubmit={submit}>
           <div class="pr-launch-opts">
-            {/* cwd/model lock once a conversation is underway — --resume reuses the
-                original session's context, so a mid-run change would silently no-op. */}
-            <button type="button" class="pr-cwd-chip" onClick={pickCwd} disabled={running() || localSessionId() != null}
-              title={cwd() ?? "run in app's working directory"}>
-              <span class="pr-cwd-label">{cwd() ? cwdLabel(cwd()) : "cwd: default"}</span>
-              <Show when={cwd()}>
-                <span class="pr-cwd-clear" role="button" aria-label="clear working directory"
-                  onClick={(e) => { e.stopPropagation(); if (!running() && localSessionId() == null) setCwd(undefined); }}>×</span>
-              </Show>
-            </button>
-            <select class="pr-model-select" value={model()} disabled={running() || localSessionId() != null}
-              onChange={(e) => setModel(e.currentTarget.value)}>
-              <option value="default">default</option>
-              <option value="opus">opus</option>
-              <option value="sonnet">sonnet</option>
-              <option value="haiku">haiku</option>
-            </select>
-            <button type="button" class="pr-new" onClick={resetLocal} disabled={running()}
-              title="start a fresh local conversation">+ NEW</button>
+            <Show
+              when={!locked()}
+              fallback={
+                <>
+                  <span class="pr-cwd-chip is-locked" title={activeSess()?.cwd ?? "app working directory"}>
+                    {activeSess()?.cwd ? cwdLabel(activeSess()!.cwd) : "cwd: default"}
+                  </span>
+                  <span class="pr-model-chip is-locked">{activeSess()?.model ?? "default"}</span>
+                </>
+              }
+            >
+              <button type="button" class="pr-cwd-chip" onClick={pickCwd} disabled={activeRunning()}
+                title={cwd() ?? "run in app's working directory"}>
+                <span class="pr-cwd-label">{cwd() ? cwdLabel(cwd()) : "cwd: default"}</span>
+                <Show when={cwd()}>
+                  <span class="pr-cwd-clear" role="button" aria-label="clear working directory"
+                    onClick={(e) => { e.stopPropagation(); if (!activeRunning()) setCwd(undefined); }}>×</span>
+                </Show>
+              </button>
+              <select class="pr-model-select" value={model()} disabled={activeRunning()}
+                onChange={(e) => setModel(e.currentTarget.value)}>
+                <option value="default">default</option>
+                <option value="opus">opus</option>
+                <option value="sonnet">sonnet</option>
+                <option value="haiku">haiku</option>
+              </select>
+            </Show>
           </div>
           <div class="pr-input-wrap">
             <span class="pr-input-ps">$</span>
             <input class="pr-input" value={prompt()} onInput={(e) => setPrompt(e.currentTarget.value)}
-              placeholder={running() ? "running…" : "ask Claude (this machine)…"} disabled={running()} />
+              placeholder={activeRunning() ? "running…" : canContinue() ? "continue…" : "ask Claude (this machine)…"}
+              disabled={activeRunning()} />
           </div>
-          <button class={`pr-run${running() ? " is-running" : ""}`} type="submit" disabled={running()}>
-            {running() ? "RUNNING" : "RUN"}
+          <button class={`pr-run${activeRunning() ? " is-running" : ""}`} type="submit" disabled={activeRunning()}>
+            {activeRunning() ? "RUNNING" : canContinue() ? "CONTINUE" : "RUN"}
           </button>
         </form>
-        </Show>
       </section>
     </div>
   );
