@@ -122,10 +122,18 @@ export function reduceWatch(prev: GraphState, e: WatchEvent): GraphState {
       }
       return s;
     }
-    case "agentDone": {
+    case "toolDone": {
+      // Subagent completion: a spawn's tool_use_id IS its agent node id.
       const id = `${sessionId}:${event.data.toolUseId}`;
       const node = s.nodes.get(id);
       if (node && node.kind === "agent") s.nodes.set(id, { ...node, status: event.data.isError ? "failed" : "complete" });
+      // Failure radar: an errored call marks the agent/master node that owns it failed.
+      if (event.data.isError) {
+        const owner = s.nodes.get(ownerId);
+        if (owner && (owner.kind === "agent" || owner.kind === "master")) {
+          s.nodes.set(ownerId, { ...owner, status: "failed" });
+        }
+      }
       return s;
     }
     default:

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { reduce, emptyGraph, MASTER_ID } from "./graph";
-import type { ClaudeEvent } from "./types";
+import { reduce, reduceWatch, emptyGraph, MASTER_ID } from "./graph";
+import type { ClaudeEvent, WatchEvent, SessionEvent } from "./types";
 
 const run = (events: ClaudeEvent[]) => events.reduce(reduce, emptyGraph());
 
@@ -63,5 +63,42 @@ describe("graph reducer", () => {
     const b = reduce(a, { type: "subagentSpawn", data: { toolUseId: "a1", subagentType: "g", parentToolUseId: null } });
     expect(a.nodes.size).toBe(0);
     expect(b.nodes.size).toBeGreaterThan(0);
+  });
+});
+
+describe("reduceWatch toolDone → failed nodes", () => {
+  const SID = "sess1";
+  const ev = (agentRef: string, event: SessionEvent): WatchEvent =>
+    ({ type: "session", data: { sessionId: SID, project: "proj", agentRef, event } });
+  const master = `${SID}:master`;
+
+  it("marks the session master node failed on an errored master-level call", () => {
+    let g = reduceWatch(emptyGraph(), ev("master", { kind: "toolActivity", data: { toolUseId: "t1", name: "Bash", filePath: "/r/a.txt" } }));
+    expect(g.nodes.get(master)!.status).toBe("running");
+    g = reduceWatch(g, ev("master", { kind: "toolDone", data: { toolUseId: "t1", isError: true } }));
+    expect(g.nodes.get(master)!.status).toBe("failed");
+  });
+
+  it("does not mark the owner failed on a successful call", () => {
+    let g = reduceWatch(emptyGraph(), ev("master", { kind: "toolActivity", data: { toolUseId: "t1", name: "Read", filePath: "/r/a.txt" } }));
+    g = reduceWatch(g, ev("master", { kind: "toolDone", data: { toolUseId: "t1", isError: false } }));
+    expect(g.nodes.get(master)!.status).toBe("running");
+  });
+
+  it("marks an errored subagent-level call's owning subagent node failed, not master", () => {
+    let g = reduceWatch(emptyGraph(), ev("genetor", { kind: "toolActivity", data: { toolUseId: "t9", name: "Edit", filePath: "/r/x.ts" } }));
+    const subId = `${SID}:genetor`;
+    expect(g.nodes.get(subId)!.status).toBe("running");
+    g = reduceWatch(g, ev("genetor", { kind: "toolDone", data: { toolUseId: "t9", isError: true } }));
+    expect(g.nodes.get(subId)!.status).toBe("failed");
+    expect(g.nodes.get(master)!.status).toBe("running");
+  });
+
+  it("marks a spawned agent node complete when its spawn-id toolDone arrives", () => {
+    let g = reduceWatch(emptyGraph(), ev("master", { kind: "subagentSpawn", data: { toolUseId: "a1", subagentType: "genetor" } }));
+    const agentId = `${SID}:a1`;
+    expect(g.nodes.get(agentId)!.status).toBe("running");
+    g = reduceWatch(g, ev("master", { kind: "toolDone", data: { toolUseId: "a1", isError: false } }));
+    expect(g.nodes.get(agentId)!.status).toBe("complete");
   });
 });

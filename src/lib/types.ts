@@ -39,6 +39,9 @@ export interface GraphState {
 }
 
 export interface VaultFile { rel: string; name: string; dir: string }
+// Mirror of Rust vault::NoteLinks (serde camelCase): a note's resolved outgoing
+// wikilinks + count of dangling targets.
+export interface NoteLinks { rel: string; links: string[]; unresolved: number }
 export interface SessionMeta { id: string; mtimeMs: number; title: string; sizeBytes: number }
 export interface Turn { role: "user" | "assistant"; text: string; ts: string }
 
@@ -46,7 +49,7 @@ export type SessionEvent =
   | { kind: "turn"; data: { role: string; text: string } }
   | { kind: "subagentSpawn"; data: { toolUseId: string; subagentType: string } }
   | { kind: "toolActivity"; data: { toolUseId: string; name: string; filePath: string | null } }
-  | { kind: "agentDone"; data: { toolUseId: string; isError: boolean } };
+  | { kind: "toolDone"; data: { toolUseId: string; isError: boolean } };
 
 export type WatchEvent =
   | { type: "session"; data: { sessionId: string; project: string; agentRef: string; event: SessionEvent } }

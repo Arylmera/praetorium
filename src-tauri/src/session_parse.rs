@@ -8,7 +8,7 @@ pub enum SessionEvent {
     Turn { role: String, text: String },
     SubagentSpawn { tool_use_id: String, subagent_type: String },
     ToolActivity { tool_use_id: String, name: String, file_path: Option<String> },
-    AgentDone { tool_use_id: String, is_error: bool },
+    ToolDone { tool_use_id: String, is_error: bool },
 }
 
 fn content_text(blocks: &[Value]) -> String {
@@ -65,7 +65,7 @@ pub fn parse_transcript_line(line: &str) -> Vec<SessionEvent> {
                 Some("tool_result") => {
                     let id = b.get("tool_use_id").and_then(|s| s.as_str()).unwrap_or("").to_string();
                     let is_error = b.get("is_error").and_then(|x| x.as_bool()).unwrap_or(false);
-                    out.push(SessionEvent::AgentDone { tool_use_id: id, is_error });
+                    out.push(SessionEvent::ToolDone { tool_use_id: id, is_error });
                 }
                 _ => {}
             }
@@ -106,6 +106,28 @@ mod tests {
         assert_eq!(parse_transcript_line(r#"{"type":"user","isMeta":true,"message":{"role":"user","content":"x"}}"#), vec![]);
         let t = parse_transcript_line(r#"{"type":"user","message":{"role":"user","content":"hello"}}"#);
         assert_eq!(t, vec![SessionEvent::Turn { role: "user".into(), text: "hello".into() }]);
+    }
+
+    #[test]
+    fn parses_tool_result_into_tool_done() {
+        // A master-level tool call's result (e.g. Read) lives in a user message.
+        let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"r1","is_error":false}]}}"#;
+        let evs = parse_transcript_line(line);
+        assert_eq!(evs, vec![SessionEvent::ToolDone { tool_use_id: "r1".into(), is_error: false }]);
+    }
+
+    #[test]
+    fn tool_result_error_flag_is_captured() {
+        let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"r2","is_error":true}]}}"#;
+        let evs = parse_transcript_line(line);
+        assert!(evs.contains(&SessionEvent::ToolDone { tool_use_id: "r2".into(), is_error: true }));
+    }
+
+    #[test]
+    fn tool_result_missing_is_error_defaults_false() {
+        let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"r3"}]}}"#;
+        let evs = parse_transcript_line(line);
+        assert_eq!(evs, vec![SessionEvent::ToolDone { tool_use_id: "r3".into(), is_error: false }]);
     }
 
     #[test]
