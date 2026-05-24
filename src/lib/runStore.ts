@@ -1,33 +1,51 @@
 import { createSignal } from "solid-js";
 import { runClaude } from "./claude";
-import { reduce, emptyGraph } from "./graph";
-import type { ClaudeEvent, GraphState } from "./types";
+import { applyWatch } from "./sessionStore";
+import type { ClaudeEvent, WatchEvent, SessionEvent } from "./types";
 
-export type TranscriptLine = { kind: "prompt" | "assistant" | "error"; text: string };
+const LOCAL_SID = "local";
+const LOCAL_PROJECT = "local run";
 
-const [graph, setGraph] = createSignal<GraphState>(emptyGraph());
-const [lines, setLines] = createSignal<TranscriptLine[]>([]);
 const [running, setRunning] = createSignal(false);
+export { running };
 
-export { graph, lines, running };
+/** Translate a locally-launched run's ClaudeEvent into a WatchEvent so the app's
+ *  own run flows through the same sessionStore pipeline as observed sessions —
+ *  appearing as a "local" session in the Console rail and the Cockpit constellation. */
+function toWatch(ev: ClaudeEvent): WatchEvent | null {
+  const wrap = (agentRef: string, event: SessionEvent): WatchEvent =>
+    ({ type: "session", data: { sessionId: LOCAL_SID, project: LOCAL_PROJECT, agentRef, event } });
+  switch (ev.type) {
+    case "assistantText":
+      return wrap(ev.data.parentToolUseId ?? "master", { kind: "turn", data: { role: "assistant", text: ev.data.text } });
+    case "subagentSpawn":
+      return wrap(ev.data.parentToolUseId ?? "master", { kind: "subagentSpawn", data: { toolUseId: ev.data.toolUseId, subagentType: ev.data.subagentType } });
+    case "toolCall":
+      return wrap(ev.data.parentToolUseId ?? "master", { kind: "toolActivity", data: { toolUseId: ev.data.toolUseId, name: ev.data.name, filePath: ev.data.filePath } });
+    case "toolResult":
+      return wrap(ev.data.parentToolUseId ?? "master", { kind: "agentDone", data: { toolUseId: ev.data.toolUseId, isError: ev.data.isError } });
+    default:
+      return null;
+  }
+}
 
 export async function startRun(prompt: string): Promise<void> {
   if (running() || !prompt.trim()) return;
-  setLines((p) => [...p, { kind: "prompt", text: prompt }]);
-  setGraph(emptyGraph());
+  // Echo the prompt as a user turn in the local session.
+  applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project: LOCAL_PROJECT, agentRef: "master", event: { kind: "turn", data: { role: "user", text: prompt } } } });
   setRunning(true);
   try {
     await runClaude(prompt, (ev: ClaudeEvent) => {
-      setGraph((g) => reduce(g, ev));
-      if (ev.type === "assistantText") setLines((p) => [...p, { kind: "assistant", text: ev.data.text }]);
-      else if (ev.type === "result" && ev.data.isError) setLines((p) => [...p, { kind: "error", text: ev.data.result }]);
-      else if (ev.type === "runError") setLines((p) => [...p, { kind: "error", text: ev.data.message }]);
-      else if (ev.type === "runComplete") setRunning(false);
+      const w = toWatch(ev);
+      if (w) applyWatch(w);
+      else if (ev.type === "result" && ev.data.isError) {
+        applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project: LOCAL_PROJECT, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: ev.data.result } } } });
+      } else if (ev.type === "runError") {
+        applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project: LOCAL_PROJECT, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: ev.data.message } } } });
+      } else if (ev.type === "runComplete") setRunning(false);
     });
   } catch (e) {
-    // Spawn failure: invoke rejects before any runComplete arrives — clear the guard
-    // so the input doesn't stay locked. (Non-fatal stderr is a runError event, not a throw.)
-    setLines((p) => [...p, { kind: "error", text: String(e) }]);
+    applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project: LOCAL_PROJECT, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: String(e) } } } });
     setRunning(false);
   }
 }
