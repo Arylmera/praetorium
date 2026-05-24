@@ -33,6 +33,34 @@ const nodeLabel = (n: { kind: string; session?: string; label: string; weight?: 
   return truncate(n.kind === "folder" ? folderBase(n.label) : n.label);
 };
 
+/** A session is visible while it's in the live index (active within ~10 min) — the
+ *  local run is always shown. Archived (older) sessions are pruned from the graph. */
+const visibleSession = (sid?: string) => !sid || sid === "local" || metas().has(sid);
+
+/** Drop nodes belonging to archived sessions, then any folder/project left with no edges. */
+function pruneArchived(g: GraphState): GraphState {
+  const kept = new Map<string, GraphNode>();
+  for (const n of g.nodes.values()) {
+    if (n.kind === "folder" || n.kind === "project") kept.set(n.id, n);
+    else if (visibleSession(n.session)) kept.set(n.id, n);
+  }
+  const edges = new Map<string, { id: string; source: string; target: string }>();
+  const deg = new Map<string, number>();
+  for (const e of g.edges.values()) {
+    if (kept.has(e.source) && kept.has(e.target)) {
+      edges.set(e.id, e);
+      deg.set(e.source, (deg.get(e.source) ?? 0) + 1);
+      deg.set(e.target, (deg.get(e.target) ?? 0) + 1);
+    }
+  }
+  const nodes = new Map<string, GraphNode>();
+  for (const n of kept.values()) {
+    if ((n.kind === "folder" || n.kind === "project") && !deg.get(n.id)) continue; // orphaned
+    nodes.set(n.id, n);
+  }
+  return { nodes, edges, activity: g.activity };
+}
+
 /** Collapse same-title sessions (same triggering prompt, within a project) into one
  *  grouped master node with a ×count. Their subagents/folders re-link to the group. */
 function collapseByTitle(g: GraphState): GraphState {
@@ -63,7 +91,7 @@ function collapseByTitle(g: GraphState): GraphState {
 
 export function Cockpit() {
   // Collapse same-title sessions into grouped nodes before layout/render.
-  const displayGraph = createMemo(() => collapseByTitle(graph()));
+  const displayGraph = createMemo(() => collapseByTitle(pruneArchived(graph())));
   // Topology key: changes only when nodes/edges change, NOT on activity pings.
   const topoKey = createMemo(() => {
     const g = displayGraph();

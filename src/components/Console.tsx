@@ -4,7 +4,8 @@ import { startRun, running } from "../lib/runStore";
 
 export function Console() {
   const [prompt, setPrompt] = createSignal("");
-  const list = () => [...sessions().entries()];
+  // Show only live sessions (in the index, active within ~10 min) + the local run; hide archived.
+  const list = () => [...sessions().entries()].filter(([id]) => id === "local" || metas().has(id));
   const active = () => (activeId() ? sessions().get(activeId()!) : undefined);
   async function submit(e: Event) { e.preventDefault(); const p = prompt(); setPrompt(""); await startRun(p); }
   return (
