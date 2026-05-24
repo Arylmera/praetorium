@@ -2,6 +2,7 @@ import { createMemo, createSignal, For, Show, untrack } from "solid-js";
 import { graph, metas, sessions } from "../lib/sessionStore";
 import { RadialForceLayout, HierarchicalLayout, type LayoutStrategy } from "../lib/layout";
 import { layoutName } from "../lib/settings";
+import type { GraphState, GraphNode } from "../lib/types";
 
 const W = 1400, H = 980;
 const strategies: Record<string, LayoutStrategy> = {
@@ -24,25 +25,56 @@ const sessionTitle = (sid: string): string => {
   return first ?? sid.slice(0, 6);
 };
 const folderBase = (p: string) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p;
-const nodeLabel = (n: { kind: string; session?: string; label: string }) =>
-  truncate(
-    n.kind === "master" && n.session ? sessionTitle(n.session)
-    : n.kind === "folder" ? folderBase(n.label)
-    : n.label,
-  );
+const nodeLabel = (n: { kind: string; session?: string; label: string; weight?: number }) => {
+  if (n.kind === "master" && n.session) {
+    const count = (n.weight ?? 1) > 1 ? ` ×${n.weight}` : "";
+    return truncate(sessionTitle(n.session)) + count;
+  }
+  return truncate(n.kind === "folder" ? folderBase(n.label) : n.label);
+};
+
+/** Collapse same-title sessions (same triggering prompt, within a project) into one
+ *  grouped master node with a ×count. Their subagents/folders re-link to the group. */
+function collapseByTitle(g: GraphState): GraphState {
+  const remap = new Map<string, string>();
+  const nodes = new Map<string, GraphNode>();
+  const count = new Map<string, number>();
+  for (const n of g.nodes.values()) {
+    if (n.kind === "master" && n.session) {
+      const gid = `grp:${n.label}:${sessionTitle(n.session)}`; // n.label = project
+      remap.set(n.id, gid);
+      count.set(gid, (count.get(gid) ?? 0) + 1);
+      if (!nodes.has(gid)) nodes.set(gid, { id: gid, kind: "master", label: n.label, status: "running", session: n.session });
+    } else if (!nodes.has(n.id)) {
+      nodes.set(n.id, n);
+    }
+  }
+  for (const [gid, c] of count) { const node = nodes.get(gid); if (node) nodes.set(gid, { ...node, weight: c }); }
+  const edges = new Map<string, { id: string; source: string; target: string }>();
+  for (const e of g.edges.values()) {
+    const s = remap.get(e.source) ?? e.source;
+    const t = remap.get(e.target) ?? e.target;
+    if (s === t) continue;
+    const id = `${s}->${t}`;
+    if (!edges.has(id)) edges.set(id, { id, source: s, target: t });
+  }
+  return { nodes, edges, activity: g.activity };
+}
 
 export function Cockpit() {
+  // Collapse same-title sessions into grouped nodes before layout/render.
+  const displayGraph = createMemo(() => collapseByTitle(graph()));
   // Topology key: changes only when nodes/edges change, NOT on activity pings.
   const topoKey = createMemo(() => {
-    const g = graph();
+    const g = displayGraph();
     return `${[...g.nodes.keys()].join(",")}|${[...g.edges.keys()].join(",")}`;
   });
-  // Recompute the (expensive) layout only when topology or the chosen layout changes;
-  // read the graph untracked so per-event activity pings don't re-run the simulation.
+  // Recompute the (expensive) layout only when topology or the chosen layout changes.
   const positions = createMemo(() => {
     topoKey();
     const layout = strategies[layoutName()] ?? strategies.radial;
-    return new Map(untrack(graph).nodes.size ? layout.layout(untrack(graph), W, H).map((p) => [p.id, p] as const) : []);
+    const g = untrack(displayGraph);
+    return new Map(g.nodes.size ? layout.layout(g, W, H).map((p) => [p.id, p] as const) : []);
   });
   // Auto-fit bounds of the current positions (+ label padding), then user zoom/pan on top.
   const bounds = createMemo(() => {
@@ -86,7 +118,7 @@ export function Cockpit() {
       <svg ref={svgEl} width="100%" height="100%" viewBox={viewBox()} preserveAspectRatio="xMidYMid meet"
         style={{ cursor: "grab", "touch-action": "none" }}
         onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
-        <For each={[...graph().edges.values()]}>{(e) => {
+        <For each={[...displayGraph().edges.values()]}>{(e) => {
           // Accessors so endpoints re-track positions() on layout change (no remount needed).
           const a = () => positions().get(e.source);
           const b = () => positions().get(e.target);
@@ -96,11 +128,11 @@ export function Cockpit() {
             </Show>
           );
         }}</For>
-        <For each={graph().activity.slice(-12)}>{(ping) => {
+        <For each={displayGraph().activity.slice(-12)}>{(ping) => {
           const p = () => positions().get(ping.folderId);
           return <Show when={p()}><circle class="cockpit-ring" cx={p()!.x} cy={p()!.y} r="8" /></Show>;
         }}</For>
-        <For each={[...graph().nodes.values()]}>{(n) => {
+        <For each={[...displayGraph().nodes.values()]}>{(n) => {
           const p = () => positions().get(n.id);
           const r = (n.kind === "master" || n.kind === "project") ? 14 : n.kind === "agent" ? 10 : 7;
           return (
