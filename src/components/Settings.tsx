@@ -1,6 +1,13 @@
 import { For } from "solid-js";
+import { open } from "@tauri-apps/plugin-dialog";
 import { THEME_LIST, theme, setTheme, type ThemeGroup, type ThemeInfo } from "../themes/theme";
 import { layoutName, setLayout, glass, setGlass, reduceMotion, setReduceMotion, applyReduceMotion } from "../lib/settings";
+import { vaultPath, setVaultPath } from "../lib/vaultStore";
+
+async function pickVault() {
+  const result = await open({ directory: true, multiple: false });
+  if (typeof result === "string") setVaultPath(result);
+}
 
 const lineColor = (group: ThemeGroup, strong: boolean) =>
   group === "light"
@@ -35,6 +42,26 @@ function ThemeGrid(props: { group: ThemeGroup }) {
 export function Settings() {
   return (
     <div class="pr-settings">
+      {/* VAULT */}
+      <section class="pr-set-card">
+        <div class="pr-card-head">
+          <h2>VAULT</h2>
+          <span class="pr-card-meta">notes source directory</span>
+        </div>
+        <div class="pr-set-body">
+          <div class="pr-set-section">
+            <div class="pr-set-section-head">
+              <span class="h">ROOT</span>
+              <span class="meta">vault path</span>
+            </div>
+            <div class="pr-vault-row">
+              <span class="pr-vault-path" title={vaultPath()}>{vaultPath()}</span>
+              <button class="pr-vault-change" onClick={pickVault}>Change…</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* APPEARANCE */}
       <section class="pr-set-card">
         <div class="pr-card-head">

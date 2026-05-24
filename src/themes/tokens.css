@@ -409,6 +409,14 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 .pr-doc th, .pr-doc td { border: 1px solid var(--iron-border); padding: 6px 10px; text-align: left; }
 .pr-doc th { color: var(--gull); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10.5px; }
 
+/* Linked references (backlinks) footer under a rendered note. */
+.pr-backlinks { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--iron-border); }
+.pr-backlinks-head { font: var(--t-kpi-label); font-family: var(--font-mono); color: var(--gull); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+.pr-backlinks-list { display: flex; flex-direction: column; gap: 2px; }
+.pr-backlink { font: 400 12.5px var(--font-mono); color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; width: fit-content; }
+.pr-backlink:hover { color: var(--accent-2); }
+.pr-backlinks-empty { font: var(--t-mono); color: var(--gull-2); }
+
 .pr-map-wrap { position: relative; flex: 1; min-height: 0; border: 1px solid var(--iron-border); background: var(--panel); overflow: hidden; }
 .pr-map-info { width: 360px; }
 .pr-map-toggle { display: inline-flex; padding: 1px; background: var(--panel-2); border: 1px solid var(--iron-border); margin-bottom: 8px; }
@@ -476,6 +484,12 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 .pr-seg button.is-active { background: var(--bg); color: var(--bone); }
 .pr-toggle-row { display: flex; align-items: center; gap: 10px; font: var(--t-mono); color: var(--gull); cursor: pointer; user-select: none; }
 .pr-toggle-row .hint { color: var(--gull-2); font-size: 11px; }
+
+/* Settings vault row: current path + Change… picker. */
+.pr-vault-row { display: flex; align-items: center; gap: 12px; }
+.pr-vault-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12.5px var(--font-mono); color: var(--bone); background: var(--panel-2); border: 1px solid var(--iron-border); padding: 7px 10px; }
+.pr-vault-change { flex: 0 0 auto; background: var(--panel-2); border: 1px solid var(--iron-border); color: var(--bone); cursor: pointer; font: 500 11px var(--font-mono); padding: 7px 14px; text-transform: uppercase; letter-spacing: 0.06em; transition: color var(--dur-snap), border-color var(--dur-snap); }
+.pr-vault-change:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ============================================================
    8 · STATUS BAR
