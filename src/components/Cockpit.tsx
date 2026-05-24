@@ -3,7 +3,7 @@ import { graph, metas, sessions } from "../lib/sessionStore";
 import { RadialForceLayout, HierarchicalLayout, type LayoutStrategy } from "../lib/layout";
 import { layoutName } from "../lib/settings";
 
-const W = 900, H = 640;
+const W = 1400, H = 980;
 const strategies: Record<string, LayoutStrategy> = {
   radial: new RadialForceLayout(),
   hierarchical: new HierarchicalLayout(),
@@ -23,8 +23,13 @@ const sessionTitle = (sid: string): string => {
   const first = sessions().get(sid)?.lines.find((l) => l.role === "user")?.text;
   return first ?? sid.slice(0, 6);
 };
+const folderBase = (p: string) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p;
 const nodeLabel = (n: { kind: string; session?: string; label: string }) =>
-  truncate(n.kind === "master" && n.session ? sessionTitle(n.session) : n.label);
+  truncate(
+    n.kind === "master" && n.session ? sessionTitle(n.session)
+    : n.kind === "folder" ? folderBase(n.label)
+    : n.label,
+  );
 
 export function Cockpit() {
   // Topology key: changes only when nodes/edges change, NOT on activity pings.
