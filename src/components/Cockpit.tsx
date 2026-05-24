@@ -1,5 +1,5 @@
 import { createMemo, For, untrack } from "solid-js";
-import { graph } from "../lib/runStore";
+import { graph } from "../lib/sessionStore";
 import { RadialForceLayout, HierarchicalLayout, type LayoutStrategy } from "../lib/layout";
 import { layoutName } from "../lib/settings";
 
@@ -9,10 +9,11 @@ const strategies: Record<string, LayoutStrategy> = {
   hierarchical: new HierarchicalLayout(),
 };
 
-const nodeColor = (kind: string, status: string) =>
-  status === "failed" ? "tomato"
-  : kind === "folder" ? "var(--accent-dim)"
-  : "var(--accent)";
+const hue = (sid?: string) => sid ? (Array.from(sid).reduce((a, c) => a + c.charCodeAt(0), 0) * 47) % 360 : 0;
+const nodeStroke = (n: { kind: string; status: string; session?: string }) =>
+  n.status === "failed" ? "tomato"
+  : n.kind === "folder" ? "var(--accent-dim)"
+  : n.session ? `hsl(${hue(n.session)},70%,60%)` : "var(--accent)";
 
 export function Cockpit() {
   // Topology key: changes only when nodes/edges change, NOT on activity pings.
@@ -43,7 +44,7 @@ export function Cockpit() {
           const r = n.kind === "master" ? 14 : n.kind === "agent" ? 10 : 7;
           return (
             <g>
-              <circle class="cockpit-node" cx={p.x} cy={p.y} r={r} fill="var(--panel)" stroke={nodeColor(n.kind, n.status)} stroke-width="2" />
+              <circle class="cockpit-node" cx={p.x} cy={p.y} r={r} fill="var(--panel)" stroke={nodeStroke(n)} stroke-width="2" />
               <text x={p.x + r + 4} y={p.y + 4} fill="var(--fg)" style={{ "font-size": "11px" }}>{n.label}</text>
             </g>
           );
