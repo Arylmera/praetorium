@@ -829,3 +829,62 @@ option { background: var(--panel); color: var(--bone); }
 [data-reduce-motion="1"] .a-ambient::before,
 [data-reduce-motion="1"] .a-banner-terminal .track,
 [data-reduce-motion="1"] .a-banner-cockpit .blip { animation: none !important; }
+
+/* ============================================================
+   11 · COMMAND PALETTE  (Ctrl/Cmd+K overlay)
+   ============================================================ */
+.pr-palette {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 14vh;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  backdrop-filter: blur(2px);
+  animation: pr-palette-fade var(--dur-snap) var(--ease);
+}
+@keyframes pr-palette-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.pr-palette-panel {
+  width: min(560px, calc(100vw - 48px));
+  max-height: 60vh; display: flex; flex-direction: column;
+  background: var(--panel-solid); border: 1px solid var(--iron-border-2);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-modal);
+  overflow: hidden;
+  animation: pr-palette-pop var(--dur-snap) var(--ease);
+}
+@keyframes pr-palette-pop { from { transform: translateY(-6px); } to { transform: none; } }
+
+.pr-palette-input {
+  border: 0; outline: 0; background: transparent;
+  padding: var(--space-3) var(--space-4);
+  color: var(--bone); font: var(--t-mono);
+  border-bottom: 1px solid var(--iron-border);
+}
+.pr-palette-input::placeholder { color: var(--gull-2); }
+
+.pr-palette-list { overflow-y: auto; padding: var(--space-2); }
+
+.pr-palette-group + .pr-palette-group { margin-top: var(--space-2); }
+.pr-palette-group-label {
+  padding: var(--space-1) var(--space-2);
+  color: var(--gull-2); font: var(--t-kpi-label);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+
+.pr-palette-item {
+  display: flex; align-items: baseline; gap: var(--space-3);
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--radius-sm); cursor: pointer;
+  transition: background var(--dur-row-hover) var(--ease);
+}
+.pr-palette-item.is-selected { background: var(--selection); }
+.pr-palette-item-title { color: var(--bone); font: var(--t-mono); }
+.pr-palette-item-hint { margin-left: auto; color: var(--gull-2); font: var(--t-axis); }
+
+.pr-palette-empty {
+  padding: var(--space-4); text-align: center;
+  color: var(--gull-2); font: var(--t-mono);
+}
+
+[data-reduce-motion="1"] .pr-palette,
+[data-reduce-motion="1"] .pr-palette-panel,
+[data-reduce-motion="1"] .pr-palette-item { animation: none !important; transition: none !important; }
