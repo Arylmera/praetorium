@@ -36,6 +36,7 @@ export function MapView() {
 
   const [zoom, setZoom] = createSignal(1);
   const [pan, setPan] = createSignal({ x: 0, y: 0 });
+  const [hover, setHover] = createSignal<{ x: number; y: number; text: string } | null>(null);
   let svgEl: SVGSVGElement | undefined;
 
   const viewBox = createMemo(() => {
@@ -85,7 +86,10 @@ export function MapView() {
             const r = n.kind === "folder" ? Math.min(30, 10 + Math.sqrt(n.weight ?? 1)) : 7;
             return (
               <Show when={p()}>
-                <g>
+                <g style={{ cursor: "pointer" }}
+                  onMouseEnter={(e) => setHover({ x: e.clientX, y: e.clientY, text: n.label })}
+                  onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY, text: n.label })}
+                  onMouseLeave={() => setHover(null)}>
                   <circle cx={p()!.x} cy={p()!.y} r={r} fill="var(--panel)" stroke="var(--accent)" stroke-width="2" />
                   <text x={p()!.x + r + 5} y={p()!.y + 4} fill="var(--fg)" style={{ "font-size": "13px" }}>{n.label}</text>
                 </g>
@@ -93,6 +97,14 @@ export function MapView() {
             );
           }}</For>
         </svg>
+        <Show when={hover()}>
+          <div style={{ position: "fixed", left: `${hover()!.x + 14}px`, top: `${hover()!.y + 14}px`, "z-index": "10",
+            "max-width": "420px", background: "var(--panel)", border: "1px solid var(--accent)", "border-radius": "5px",
+            padding: "6px 9px", "font-size": "12px", color: "var(--fg)", "white-space": "pre-wrap",
+            "pointer-events": "none", "box-shadow": "0 4px 14px rgba(0,0,0,.5)" }}>
+            {hover()!.text}
+          </div>
+        </Show>
       </Show>
     </div>
   );
