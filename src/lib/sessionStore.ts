@@ -9,8 +9,10 @@ const [sessions, setSessions] = createSignal<Map<string, { project?: string; lin
 const [graph, setGraph] = createSignal<GraphState>(emptyGraph());
 const [activeId, setActiveId] = createSignal<string | null>(null);
 const [metas, setMetas] = createSignal<Map<string, LiveSessionMeta>>(new Map());
+// `${sessionId}:${toolUseId}` -> subagent type, so the Console can name nested agents.
+const [subagentTypes, setSubagentTypes] = createSignal<Map<string, string>>(new Map());
 
-export { sessions, graph, activeId, setActiveId, metas };
+export { sessions, graph, activeId, setActiveId, metas, subagentTypes };
 
 export async function refreshMetas(): Promise<void> {
   const list = await listLiveSessions();
@@ -30,6 +32,9 @@ export function applyWatch(e: WatchEvent) {
     next.set(sessionId, cur);
     return next;
   });
+  if (event.kind === "subagentSpawn") {
+    setSubagentTypes((prev) => new Map(prev).set(`${sessionId}:${event.data.toolUseId}`, event.data.subagentType || "agent"));
+  }
   setGraph((g) => reduceWatch(g, e));
   if (activeId() === null) setActiveId(sessionId);
 }
