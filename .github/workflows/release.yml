@@ -23,7 +23,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # PAT (or App token) able to bypass `master` branch protection.
+          # Falls back to GITHUB_TOKEN if the secret is unset.
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
