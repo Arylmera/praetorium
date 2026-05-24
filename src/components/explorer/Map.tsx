@@ -118,28 +118,27 @@ export function MapView() {
   const loading = () => (view() === "full" ? fullData.loading : drillData.loading);
 
   return (
-    <div style={{ position: "relative", height: "100%", overflow: "hidden" }}>
-      <Show when={meta()} fallback={<div style={{ padding: "14px", color: "var(--fg)" }}>No Cartographicum meta.json found.</div>}>
-        <div style={{ position: "absolute", top: "10px", left: "12px", "z-index": "2", "max-width": "360px",
-          background: "var(--panel)", border: "1px solid var(--border)", "border-radius": "6px", padding: "8px 10px",
-          "font-size": "11px", color: "var(--fg)", opacity: "0.93" }}>
-          <div style={{ display: "flex", gap: "6px", "margin-bottom": "5px" }}>
-            <button onClick={() => { setView("full"); reset(); }} style={tabStyle(view() === "full")}>Full vault</button>
-            <button onClick={() => { setView("rollup"); setDrill(null); reset(); }} style={tabStyle(view() === "rollup")}>Folders</button>
+    <div class="pr-map-wrap">
+      <Show when={meta()} fallback={<div style={{ padding: "14px", color: "var(--gull)" }}>No Cartographicum meta.json found.</div>}>
+        <div class="pr-info-card pr-map-info">
+          <h3>CARTOGRAPHICUM</h3>
+          <div class="pr-map-toggle">
+            <button class={view() === "full" ? "is-active" : ""} onClick={() => { setView("full"); reset(); }}>FULL VAULT</button>
+            <button class={view() === "rollup" ? "is-active" : ""} onClick={() => { setView("rollup"); setDrill(null); reset(); }}>FOLDERS</button>
           </div>
           <Show when={view() === "full"}>
-            <div>Every folder's files merged into one graph, coloured by <b>folder</b>; links are cross-file references.</div>
+            <p>Every folder's files merged into one graph, coloured by <b>folder</b>; links are cross-file references.</p>
           </Show>
           <Show when={isOverview()}>
-            <div>Each <b>folder</b> sized by note count, linked to its top <b>hub</b>. <b>Click a folder</b> to open it.</div>
+            <p>Each <b>folder</b> sized by note count, linked to its top <b>hub</b>. Click a folder to drill in.</p>
           </Show>
           <Show when={isDrill()}>
-            <div><b>{drill()!.name}</b> — files coloured by <b>community</b>. <span style={{ cursor: "pointer", "text-decoration": "underline" }} onClick={() => { setDrill(null); reset(); }}>back</span></div>
+            <p><b>{drill()!.name}</b> — files coloured by <b>community</b>. <a style={{ cursor: "pointer", "text-decoration": "underline", color: "var(--accent)" }} onClick={() => { setDrill(null); reset(); }}>back</a></p>
           </Show>
-          <label style={{ display: "block", "margin-top": "4px" }}>
-            <input type="checkbox" checked={showSymbols()} onChange={(e) => { setShowSymbols(e.currentTarget.checked); reset(); }} /> show symbols (functions/headings — heavier)
+          <label class="pr-check">
+            <input type="checkbox" checked={showSymbols()} onChange={(e) => { setShowSymbols(e.currentTarget.checked); reset(); }} /> show symbols <span style={{ color: "var(--gull-2)" }}>· heavier</span>
           </label>
-          <div style={{ "margin-top": "3px", color: "var(--accent-dim)" }}>scroll = zoom · drag = pan · <span style={{ cursor: "pointer", "text-decoration": "underline" }} onClick={reset}>reset</span></div>
+          <div class="pr-info-meta" style={{ "margin-top": "8px" }}>scroll = zoom · drag = pan · <a onClick={reset}>reset</a></div>
         </div>
         <svg ref={svgEl} width="100%" height="100%" viewBox={viewBox()} preserveAspectRatio="xMidYMid meet"
           style={{ cursor: "grab", "touch-action": "none" }}
@@ -168,25 +167,15 @@ export function MapView() {
           }}</For>
         </svg>
         <Show when={loading()}>
-          <div style={{ position: "absolute", bottom: "12px", left: "12px", color: "var(--accent-dim)", "font-size": "11px" }}>building graph…</div>
+          <div style={{ position: "absolute", bottom: "12px", left: "12px", color: "var(--gull-2)", "font-size": "11px", "font-family": "var(--font-mono)" }}>building graph…</div>
         </Show>
         <Show when={hover()}>
-          <div style={{ position: "fixed", left: `${hover()!.x + 14}px`, top: `${hover()!.y + 14}px`, "z-index": "10",
-            "max-width": "440px", background: "var(--panel)", border: "1px solid var(--accent)", "border-radius": "5px",
-            padding: "6px 9px", "font-size": "12px", color: "var(--fg)", "white-space": "pre-wrap",
-            "pointer-events": "none", "box-shadow": "0 4px 14px rgba(0,0,0,.5)" }}>
+          <div class="pr-tooltip" style={{ left: `${hover()!.x + 14}px`, top: `${hover()!.y + 14}px` }}>
             {hover()!.title}
-            <Show when={hover()!.sub}><div style={{ "font-size": "11px", color: "var(--accent-dim)", "margin-top": "2px" }}>{hover()!.sub}</div></Show>
+            <Show when={hover()!.sub}><span class="sub">{hover()!.sub}</span></Show>
           </div>
         </Show>
       </Show>
     </div>
   );
-}
-
-function tabStyle(active: boolean) {
-  return {
-    background: active ? "var(--accent)" : "var(--panel)", color: active ? "var(--bg)" : "var(--fg)",
-    border: "1px solid var(--border)", "border-radius": "4px", padding: "2px 8px", "font-size": "11px", cursor: "pointer",
-  } as const;
 }
