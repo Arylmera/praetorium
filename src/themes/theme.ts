@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import type { View } from "../components/ViewSwitcher";
 
 /* Token Dashboard theme set. Bare "dark" is the baseline (no data-theme override). */
 export const THEMES = [
@@ -63,6 +64,31 @@ export const THEME_LIST: ThemeInfo[] = [
   { id: "grimdark", label: "GRIMDARK", group: "special", swatches: THEME_SWATCHES.grimdark },
 ];
 
+/* Per-theme UI-copy overrides. The special themes re-skin the brand prompt and
+   nav labels into their own vocabulary; every other theme falls back to the
+   defaults rendered inline in the components. Kept genre-neutral for grimdark
+   (no Games Workshop IP) per the design handoff. */
+export interface ThemedCopy {
+  path: string;
+  ps1: string;
+  cmd: string;
+  nav: Record<View, string>;
+}
+export const THEMED_COPY: Partial<Record<Theme, ThemedCopy>> = {
+  terminal: {
+    path: "C:\\PRAETORIUM", ps1: ">", cmd: "PRAETORIUM.EXE",
+    nav: { console: "CONSOLE", cockpit: "COCKPIT", explorer: "EXPLORER", settings: "SETTINGS" },
+  },
+  cockpit: {
+    path: "BRIDGE", ps1: "›", cmd: "PRAETORIUM.SYS",
+    nav: { console: "COMMS", cockpit: "HELM", explorer: "CHARTS", settings: "CONFIG" },
+  },
+  grimdark: {
+    path: "~/forge/vigil", ps1: "✠", cmd: "vigil",
+    nav: { console: "LITANY", cockpit: "WARFORGE", explorer: "ARCHIVE", settings: "RUBRIC" },
+  },
+};
+
 const KEY = "praetorium.theme";
 function initial(): Theme {
   const stored = localStorage.getItem(KEY);
@@ -77,3 +103,6 @@ export function setTheme(t: Theme): void {
   localStorage.setItem(KEY, t);
   setThemeSignal(t);
 }
+
+/* Reactive copy overrides for the active theme; undefined for non-special themes. */
+export const themedCopy = (): ThemedCopy | undefined => THEMED_COPY[theme()];
