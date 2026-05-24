@@ -14,8 +14,9 @@ const nodeStroke = (n: { kind: string; status: string; session?: string }) =>
   n.status === "failed" ? "tomato"
   : n.kind === "folder" ? "var(--accent-dim)"
   : n.session ? `hsl(${hue(n.session)},70%,60%)` : "var(--accent)";
+const truncate = (s: string, n = 24) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const nodeLabel = (n: { kind: string; session?: string; label: string }) =>
-  n.kind === "master" && n.session ? (metas().get(n.session)?.title ?? n.label) : n.label;
+  truncate(n.kind === "master" && n.session ? (metas().get(n.session)?.title ?? n.label) : n.label);
 
 export function Cockpit() {
   // Topology key: changes only when nodes/edges change, NOT on activity pings.
