@@ -1,8 +1,10 @@
 use crate::events::ClaudeEvent;
 use crate::parser::parse_line;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
-use tauri::AppHandle;
-use tauri_plugin_shell::process::CommandEvent;
+use tauri::{AppHandle, State};
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 /// Drop env vars that put a spawned `claude` into nested/API mode, so it uses
@@ -18,6 +20,33 @@ pub struct ClaudeInvocation {
     pub args: Vec<String>,
     pub cwd: Option<String>,
 }
+
+/// A run id → child-process registry, so in-flight `claude` runs can be killed.
+pub struct Registry<T>(pub Arc<Mutex<HashMap<String, T>>>);
+
+impl<T> Default for Registry<T> {
+    fn default() -> Self {
+        Registry(Arc::new(Mutex::new(HashMap::new())))
+    }
+}
+
+impl<T> Clone for Registry<T> {
+    fn clone(&self) -> Self {
+        Registry(self.0.clone())
+    }
+}
+
+impl<T> Registry<T> {
+    pub fn insert(&self, id: String, val: T) {
+        self.0.lock().unwrap().insert(id, val);
+    }
+    /// Remove and return the value; a second call for the same id yields `None`.
+    pub fn take(&self, id: &str) -> Option<T> {
+        self.0.lock().unwrap().remove(id)
+    }
+}
+
+pub type RunRegistry = Registry<CommandChild>;
 
 /// Build the `claude` arg vector + working dir from the run options. `--model`
 /// is appended only when a model is chosen; `cwd` is carried through untouched.
@@ -51,12 +80,15 @@ pub fn plan_claude(
 #[tauri::command]
 pub async fn run_claude(
     app: AppHandle,
+    run_id: String,
     prompt: String,
     cwd: Option<String>,
     model: Option<String>,
+    resume_id: Option<String>,
     on_event: Channel<ClaudeEvent>,
+    registry: State<'_, RunRegistry>,
 ) -> Result<(), String> {
-    let plan = plan_claude(&prompt, cwd, model, None);
+    let plan = plan_claude(&prompt, cwd, model, resume_id);
     let shell = app.shell();
     let mut command = shell
         .command("claude")
@@ -66,10 +98,12 @@ pub async fn run_claude(
     if let Some(dir) = plan.cwd {
         command = command.current_dir(dir);
     }
-    let (mut rx, _child) = command
+    let (mut rx, child) = command
         .spawn()
         .map_err(|e| format!("failed to spawn claude: {e}"))?;
+    registry.insert(run_id.clone(), child);
 
+    let reg = registry.inner().clone();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
             match event {
@@ -84,6 +118,7 @@ pub async fn run_claude(
                     let _ = on_event.send(ClaudeEvent::RunError { message: msg });
                 }
                 CommandEvent::Terminated(payload) => {
+                    reg.take(&run_id);
                     let code = payload.code.unwrap_or(-1);
                     let _ = on_event.send(ClaudeEvent::RunComplete { exit_code: code });
                 }
@@ -95,9 +130,27 @@ pub async fn run_claude(
     Ok(())
 }
 
+/// Kill an in-flight run by its run id. No-op if the run already finished.
+#[tauri::command]
+pub async fn stop_claude(run_id: String, registry: State<'_, RunRegistry>) -> Result<(), String> {
+    if let Some(child) = registry.take(&run_id) {
+        let _ = child.kill();
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{plan_claude, sanitized_env};
+
+    #[test]
+    fn registry_take_returns_value_once() {
+        use super::Registry;
+        let r: Registry<u32> = Registry::default();
+        r.insert("a".to_string(), 7);
+        assert_eq!(r.take("a"), Some(7));
+        assert_eq!(r.take("a"), None);
+    }
 
     #[test]
     fn includes_model_arg_only_when_provided() {
