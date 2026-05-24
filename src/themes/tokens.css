@@ -276,6 +276,21 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 .pr-sessions-title { font: var(--t-card-title); text-transform: uppercase; letter-spacing: 0.1em; color: var(--bone); display: inline-flex; align-items: center; gap: 10px; }
 .pr-sessions-title::before { content: ""; display: inline-block; width: 16px; height: 2px; background: var(--accent); flex: 0 0 auto; }
 .pr-sessions-sub { font: 500 10px var(--font-mono); color: var(--gull-2); text-transform: uppercase; letter-spacing: 0.1em; padding-left: 26px; }
+.pr-new-session { align-self: flex-start; margin-left: 26px; background: var(--panel-2); border: 1px solid var(--iron-border); border-radius: var(--radius-sm); color: var(--gull); padding: 3px 9px; cursor: pointer; font: 500 10px var(--font-mono); text-transform: uppercase; letter-spacing: 0.1em; transition: border-color var(--dur-snap), color var(--dur-snap); }
+.pr-new-session:hover { border-color: var(--accent); color: var(--accent); }
+.pr-session-bullet.is-idle { background: var(--gull-2); }
+.pr-session-bullet.is-running { background: var(--accent); animation: pr-blink 1s steps(2) infinite; }
+.pr-session-bullet.is-done { background: var(--good); }
+.pr-session-bullet.is-failed { background: var(--bad); }
+.pr-session-bullet.is-stopped { background: var(--warn); }
+.pr-session-stop, .pr-session-close { margin-left: 6px; background: transparent; border: 0; color: var(--gull); cursor: pointer; font: 500 12px var(--font-mono); line-height: 1; padding: 0 2px; opacity: 0; transition: opacity var(--dur-snap), color var(--dur-snap); }
+.pr-session:hover .pr-session-stop, .pr-session:hover .pr-session-close { opacity: 1; }
+.pr-session-stop { color: var(--warn); opacity: 1; }
+.pr-session-stop:hover { color: var(--bad); }
+.pr-session-close:hover { color: var(--bad); }
+.pr-session-rename { flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--accent); border-radius: var(--radius-sm); color: var(--bone); font: 500 12px var(--font-mono); padding: 2px 6px; outline: none; }
+.pr-model-chip, .pr-cwd-chip.is-locked { display: inline-flex; align-items: center; background: transparent; border: 1px dashed var(--iron-border); border-radius: var(--radius-sm); color: var(--gull); padding: 4px 10px; font: 500 11px var(--font-mono); cursor: default; }
+[data-reduce-motion="1"] .pr-session-bullet.is-running { animation: none; }
 
 .pr-sessions-list { overflow: auto; flex: 1; padding: 6px 0; }
 .pr-session { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: baseline; padding: 8px 14px; cursor: pointer; border-left: 2px solid transparent; transition: background var(--dur-row-hover); }
