@@ -1,4 +1,4 @@
-import { createMemo, For, Show, untrack } from "solid-js";
+import { createMemo, createSignal, For, Show, untrack } from "solid-js";
 import { graph, metas, sessions } from "../lib/sessionStore";
 import { RadialForceLayout, HierarchicalLayout, type LayoutStrategy } from "../lib/layout";
 import { layoutName } from "../lib/settings";
@@ -44,9 +44,48 @@ export function Cockpit() {
     const layout = strategies[layoutName()] ?? strategies.radial;
     return new Map(untrack(graph).nodes.size ? layout.layout(untrack(graph), W, H).map((p) => [p.id, p] as const) : []);
   });
+  // Auto-fit bounds of the current positions (+ label padding), then user zoom/pan on top.
+  const bounds = createMemo(() => {
+    const pts = [...positions().values()];
+    if (!pts.length) return { bx: 0, by: 0, bw: W, bh: H };
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    const pad = 60, labelPad = 200;
+    const bx = Math.min(...xs) - pad, by = Math.min(...ys) - pad;
+    return { bx, by, bw: Math.max(...xs) + labelPad - bx, bh: Math.max(...ys) + pad - by };
+  });
+  const [zoom, setZoom] = createSignal(1);
+  const [pan, setPan] = createSignal({ x: 0, y: 0 });
+  let svgEl: SVGSVGElement | undefined;
+  const viewBox = createMemo(() => {
+    const b = bounds();
+    const w = b.bw / zoom(), h = b.bh / zoom();
+    const cx = b.bx + b.bw / 2 + pan().x, cy = b.by + b.bh / 2 + pan().y;
+    return `${cx - w / 2} ${cy - h / 2} ${w} ${h}`;
+  });
+  function onWheel(e: WheelEvent) { e.preventDefault(); const f = e.deltaY < 0 ? 1.2 : 1 / 1.2; setZoom((z) => Math.min(8, Math.max(0.4, z * f))); }
+  let drag = false, lx = 0, ly = 0;
+  function onDown(e: PointerEvent) { drag = true; lx = e.clientX; ly = e.clientY; (e.currentTarget as Element).setPointerCapture?.(e.pointerId); }
+  function onMove(e: PointerEvent) {
+    if (!drag || !svgEl) return;
+    const r = svgEl.getBoundingClientRect();
+    const scale = (bounds().bw / zoom()) / r.width;
+    setPan((p) => ({ x: p.x - (e.clientX - lx) * scale, y: p.y - (e.clientY - ly) * scale }));
+    lx = e.clientX; ly = e.clientY;
+  }
+  function onUp() { drag = false; }
+  function reset() { setZoom(1); setPan({ x: 0, y: 0 }); }
   return (
-    <div style={{ height: "100%", overflow: "hidden" }}>
-      <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
+    <div style={{ position: "relative", height: "100%", overflow: "hidden" }}>
+      <div style={{ position: "absolute", top: "10px", left: "12px", "z-index": "2", "max-width": "340px",
+        background: "var(--panel)", border: "1px solid var(--border)", "border-radius": "6px", padding: "8px 10px",
+        "font-size": "11px", color: "var(--fg)", opacity: "0.92" }}>
+        <div style={{ color: "var(--accent)", "font-weight": "700", "margin-bottom": "3px" }}>Cockpit — live agent graph</div>
+        <div><b>project</b> → its <b>sessions</b> (colour per session) → <b>subagents</b>, each linked to the <b>folders</b> it touches. Folders touched by multiple sessions are shared. Pulses = live file activity.</div>
+        <div style={{ "margin-top": "4px", color: "var(--accent-dim)" }}>Scroll to zoom · drag to pan · <span style={{ cursor: "pointer", "text-decoration": "underline" }} onClick={reset}>reset</span></div>
+      </div>
+      <svg ref={svgEl} width="100%" height="100%" viewBox={viewBox()} preserveAspectRatio="xMidYMid meet"
+        style={{ cursor: "grab", "touch-action": "none" }}
+        onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
         <For each={[...graph().edges.values()]}>{(e) => {
           // Accessors so endpoints re-track positions() on layout change (no remount needed).
           const a = () => positions().get(e.source);
