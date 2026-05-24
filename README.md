@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="src/assets/praetorium-icon-256.png" alt="Praetorium" width="120" />
+<img src="src/assets/brand/praetorium-icon-256.png" alt="Praetorium" width="120" />
 
 # Praetorium
 
