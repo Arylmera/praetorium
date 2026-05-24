@@ -60,6 +60,17 @@ fn now_ms() -> u64 {
 }
 const LIVE_WINDOW_MS: u64 = 60_000;
 
+/// Decide how to seed a session file's read offset at startup.
+/// Live files (modified within the live window) replay from the start so an
+/// already-running session is reconstructed; everything else jumps to EOF.
+enum Seed {
+    Replay,
+    SkipTo(usize),
+}
+fn seed_for(len: usize, age_ms: u64) -> Seed {
+    if age_ms <= LIVE_WINDOW_MS { Seed::Replay } else { Seed::SkipTo(len) }
+}
+
 #[tauri::command]
 pub fn list_live_sessions() -> Result<Vec<SessionMeta>, String> {
     let root = projects_root();
@@ -122,16 +133,36 @@ fn pump(path: &Path, offsets: &Mutex<HashMap<PathBuf, usize>>, ch: &Arc<Channel<
 pub fn watch_sessions(app: tauri::AppHandle, on_event: Channel<WatchEvent>) -> Result<(), String> {
     use notify::{RecursiveMode, Watcher, EventKind};
     let root = projects_root();
-    // Seed offsets to END of existing files so we stream only NEW activity.
+    let ch = Arc::new(on_event);
+    // Seed read offsets: live files (active within LIVE_WINDOW_MS) replay from
+    // the start so already-running sessions are reconstructed; everything else
+    // jumps to EOF and streams only NEW activity.
     let offsets: Arc<Mutex<HashMap<PathBuf, usize>>> = Arc::new(Mutex::new(HashMap::new()));
+    let mut to_backfill: Vec<PathBuf> = Vec::new();
+    let mut seed = |p: PathBuf, meta: &std::fs::Metadata| {
+        let len = meta.len() as usize;
+        let mtime = meta.modified().ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let age = now_ms().saturating_sub(mtime);
+        match seed_for(len, age) {
+            Seed::Replay => {
+                offsets.lock().unwrap().insert(p.clone(), 0);
+                to_backfill.push(p);
+            }
+            Seed::SkipTo(off) => {
+                offsets.lock().unwrap().insert(p, off);
+            }
+        }
+    };
     if let Ok(rd) = std::fs::read_dir(&root) {
         for proj in rd.flatten() {
             if let Ok(files) = std::fs::read_dir(proj.path()) {
                 for f in files.flatten() {
                     let p = f.path();
                     if p.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                        let len = f.metadata().map(|m| m.len() as usize).unwrap_or(0);
-                        offsets.lock().unwrap().insert(p.clone(), len);
+                        if let Ok(m) = f.metadata() { seed(p.clone(), &m); }
                     }
                     // also seed subagent files one level deeper
                     if p.is_dir() {
@@ -139,8 +170,7 @@ pub fn watch_sessions(app: tauri::AppHandle, on_event: Channel<WatchEvent>) -> R
                             for sf in sub.flatten() {
                                 let sp = sf.path();
                                 if sp.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                                    let len = sf.metadata().map(|m| m.len() as usize).unwrap_or(0);
-                                    offsets.lock().unwrap().insert(sp, len);
+                                    if let Ok(m) = sf.metadata() { seed(sp, &m); }
                                 }
                             }
                         }
@@ -149,7 +179,11 @@ pub fn watch_sessions(app: tauri::AppHandle, on_event: Channel<WatchEvent>) -> R
             }
         }
     }
-    let ch = Arc::new(on_event);
+    // Replay backlog of live sessions before the watcher starts; pump advances
+    // each offset to EOF so the watcher never re-emits these lines.
+    for p in &to_backfill {
+        pump(p, &offsets, &ch);
+    }
     let ch2 = ch.clone();
     let off2 = offsets.clone();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
@@ -166,4 +200,16 @@ pub fn watch_sessions(app: tauri::AppHandle, on_event: Channel<WatchEvent>) -> R
     watcher.watch(&root, RecursiveMode::Recursive).map_err(|e| format!("watch: {e}"))?;
     app.manage(WatcherHandle(Mutex::new(Some(watcher))));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_files_replay_others_skip_to_eof() {
+        assert!(matches!(seed_for(100, 0), Seed::Replay));
+        assert!(matches!(seed_for(100, LIVE_WINDOW_MS), Seed::Replay));
+        assert!(matches!(seed_for(100, LIVE_WINDOW_MS + 1), Seed::SkipTo(100)));
+    }
 }
