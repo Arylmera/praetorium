@@ -1,9 +1,9 @@
 use crate::events::ClaudeEvent;
 use crate::parser::parse_line;
+use std::process::Stdio;
 use tauri::ipc::Channel;
-use tauri::AppHandle;
-use tauri_plugin_shell::process::CommandEvent;
-use tauri_plugin_shell::ShellExt;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
 
 /// Drop env vars that put a spawned `claude` into nested/API mode, so it uses
 /// the user's subscription auth. Keeps everything else (PATH, HOME, ...).
@@ -39,48 +39,66 @@ pub fn plan_claude(prompt: &str, cwd: Option<String>, model: Option<String>) -> 
 /// Spawn `claude -p <prompt> --output-format stream-json` and stream parsed
 /// events to the frontend through `on_event`. Returns once spawning is done;
 /// streaming continues on a background task.
+///
+/// We spawn via `tokio::process` rather than `tauri-plugin-shell` so we can pin
+/// stdin to /dev/null: in `-p` mode `claude` reads piped stdin to append to the
+/// prompt and, with an open-but-empty pipe (the plugin always pipes stdin),
+/// stalls ~3s before warning "no stdin data received". A null stdin yields an
+/// immediate EOF instead. On Windows we still set CREATE_NO_WINDOW so the child
+/// (claude.exe, resolved from PATH) spawns without a console window.
 #[tauri::command]
 pub async fn run_claude(
-    app: AppHandle,
     prompt: String,
     cwd: Option<String>,
     model: Option<String>,
     on_event: Channel<ClaudeEvent>,
 ) -> Result<(), String> {
     let plan = plan_claude(&prompt, cwd, model);
-    let shell = app.shell();
-    let mut command = shell
-        .command("claude")
+    let mut command = Command::new("claude");
+    command
         .args(plan.args)
         .env_clear()
-        .envs(sanitized_env(std::env::vars()));
-    if let Some(dir) = plan.cwd {
-        command = command.current_dir(dir);
+        .envs(sanitized_env(std::env::vars()))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        // tokio's Command exposes creation_flags inherently on Windows.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
     }
-    let (mut rx, _child) = command
+    if let Some(dir) = plan.cwd {
+        command.current_dir(dir);
+    }
+    let mut child = command
         .spawn()
         .map_err(|e| format!("failed to spawn claude: {e}"))?;
+    let stdout = child.stdout.take().ok_or("missing stdout pipe")?;
+    let stderr = child.stderr.take().ok_or("missing stderr pipe")?;
 
     tauri::async_runtime::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            match event {
-                CommandEvent::Stdout(bytes) => {
-                    let line = String::from_utf8_lossy(&bytes);
-                    for ev in parse_line(&line) {
-                        let _ = on_event.send(ev);
+        let mut out = Some(BufReader::new(stdout).lines());
+        let mut err = Some(BufReader::new(stderr).lines());
+        loop {
+            tokio::select! {
+                res = async { out.as_mut().unwrap().next_line().await }, if out.is_some() => {
+                    match res {
+                        Ok(Some(line)) => for ev in parse_line(&line) { let _ = on_event.send(ev); },
+                        _ => out = None,
                     }
                 }
-                CommandEvent::Stderr(bytes) => {
-                    let msg = String::from_utf8_lossy(&bytes).to_string();
-                    let _ = on_event.send(ClaudeEvent::RunError { message: msg });
+                res = async { err.as_mut().unwrap().next_line().await }, if err.is_some() => {
+                    match res {
+                        Ok(Some(line)) => { let _ = on_event.send(ClaudeEvent::RunError { message: line }); }
+                        _ => err = None,
+                    }
                 }
-                CommandEvent::Terminated(payload) => {
-                    let code = payload.code.unwrap_or(-1);
-                    let _ = on_event.send(ClaudeEvent::RunComplete { exit_code: code });
-                }
-                _ => {}
+                else => break,
             }
         }
+        let code = child.wait().await.ok().and_then(|s| s.code()).unwrap_or(-1);
+        let _ = on_event.send(ClaudeEvent::RunComplete { exit_code: code });
     });
 
     Ok(())

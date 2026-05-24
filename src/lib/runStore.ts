@@ -7,7 +7,12 @@ const LOCAL_SID = "local";
 const LOCAL_PROJECT = "local run";
 
 const [running, setRunning] = createSignal(false);
-export { running };
+// Real session id claude assigns to the current local run (from its stream-json
+// "system"/init line). The file watcher independently re-discovers this same
+// transcript on disk under this id; the Console uses it to hide that duplicate,
+// since the run already shows live under the synthetic "local" session.
+const [localSessionId, setLocalSessionId] = createSignal<string | null>(null);
+export { running, localSessionId };
 
 /** Derive the local session's project label from the chosen cwd: its basename,
  *  or "local run" when no cwd is set. Tolerates trailing and Windows separators. */
@@ -48,6 +53,7 @@ export async function startRun(prompt: string, opts?: { cwd?: string; model?: st
     await runClaude(prompt, (ev: ClaudeEvent) => {
       const w = toWatch(ev, project);
       if (w) applyWatch(w);
+      else if (ev.type === "systemInit") setLocalSessionId(ev.data.sessionId);
       else if (ev.type === "result" && ev.data.isError) {
         applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: ev.data.result } } } });
       } else if (ev.type === "runError") {

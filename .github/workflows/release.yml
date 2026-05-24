@@ -57,15 +57,22 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump version (package.json + tauri.conf.json) and tag
+      - name: Bump version (package.json + tauri.conf.json + Cargo.toml) and tag
         id: version
         run: |
           ver=$(npm version ${{ steps.bump.outputs.level }} --no-git-tag-version)
           ver=${ver#v}
           node -e "const f='src-tauri/tauri.conf.json',j=require('./'+f);j.version='$ver';require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
-          git add package.json package-lock.json src-tauri/tauri.conf.json
+          # Bump the first `version = "x.y.z"` in [package] of Cargo.toml.
+          sed -i -E '0,/^version = "[^"]+"/s//version = "'"$ver"'"/' src-tauri/Cargo.toml
+          # Keep Cargo.lock's own praetorium entry in sync so `npm test` /
+          # downstream builds don't fail on a dirty lockfile.
+          (cd src-tauri && cargo update -p praetorium --precise "$ver" 2>/dev/null) || true
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
           git commit -m "chore(release): v$ver"
-          git tag "v$ver"
+          # Annotated tag: required for `git push --follow-tags` to actually
+          # push the tag (lightweight tags are silently skipped).
+          git tag -a "v$ver" -m "Release v$ver"
           git push --follow-tags origin master
           echo "tag=v$ver" >> "$GITHUB_OUTPUT"
 
@@ -93,6 +100,9 @@ jobs:
             args: --target x86_64-apple-darwin
             rust_target: x86_64-apple-darwin
           - platform: ubuntu-22.04
+            args: ""
+            rust_target: ""
+          - platform: windows-2022
             args: ""
             rust_target: ""
     runs-on: ${{ matrix.platform }}

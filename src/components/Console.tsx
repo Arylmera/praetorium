@@ -2,7 +2,7 @@ import { For, Show, createSignal, onCleanup } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { sessions, insights, activeId, setActiveId, metas, subagentTypes } from "../lib/sessionStore";
 import { failures, type ToolCall } from "../lib/insightsStore";
-import { startRun, running, cwdLabel } from "../lib/runStore";
+import { startRun, running, cwdLabel, localSessionId } from "../lib/runStore";
 
 export function Console() {
   const [prompt, setPrompt] = createSignal("");
@@ -16,7 +16,10 @@ export function Console() {
   let streamRef: HTMLDivElement | undefined;
 
   // Show only live sessions (in the index, active within ~10 min) + the local run; hide archived.
-  const list = () => [...sessions().entries()].filter(([id]) => id === "local" || metas().has(id));
+  // Drop the watcher's re-discovery of our own local run (same transcript, real id) — it already
+  // shows live under the synthetic "local" session, so listing both would duplicate the card.
+  const list = () =>
+    [...sessions().entries()].filter(([id]) => id === "local" || (metas().has(id) && id !== localSessionId()));
   const active = () => (activeId() ? sessions().get(activeId()!) : undefined);
 
   // ---- Run Insights: tool-call timeline + failure radar ----
