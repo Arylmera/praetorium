@@ -416,7 +416,6 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 .pr-map-toggle button:hover { color: var(--bone); }
 .pr-map-toggle button.is-active { background: var(--bg); color: var(--bone); }
 .pr-check { display: flex; align-items: center; gap: 8px; font: var(--t-mono); color: var(--gull); cursor: pointer; user-select: none; margin-top: 6px; }
-.pr-check input { accent-color: var(--accent); }
 
 .pr-sessions-pane { display: grid; grid-template-columns: 320px 1fr; flex: 1; min-height: 0; border: 1px solid var(--iron-border); background: var(--panel); }
 .pr-sess-list { border-right: 1px solid var(--iron-border); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -476,7 +475,6 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 .pr-seg button:hover { color: var(--bone); }
 .pr-seg button.is-active { background: var(--bg); color: var(--bone); }
 .pr-toggle-row { display: flex; align-items: center; gap: 10px; font: var(--t-mono); color: var(--gull); cursor: pointer; user-select: none; }
-.pr-toggle-row input { accent-color: var(--accent); }
 .pr-toggle-row .hint { color: var(--gull-2); font-size: 11px; }
 
 /* ============================================================
@@ -501,7 +499,21 @@ button:disabled { opacity: .5; cursor: default; }
 input, textarea { font-family: var(--font-mono); color: var(--bone); background: var(--panel-2); border: 1px solid var(--iron-border); }
 input::placeholder, textarea::placeholder { color: var(--gull-2); }
 input:focus, textarea:focus { outline: none; border-color: var(--accent); }
-input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  width: 14px; height: 14px; margin: 0; flex: none;
+  background: var(--panel-2); border: 1px solid var(--iron-border-2);
+  border-radius: 0; cursor: pointer; position: relative;
+  transition: border-color var(--dur-snap), background var(--dur-snap);
+}
+input[type="checkbox"]:hover { border-color: var(--accent); }
+input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"]:checked::after {
+  content: ""; position: absolute; left: 4px; top: 1px;
+  width: 3px; height: 7px; border: solid var(--bg);
+  border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+input[type="checkbox"]:focus-visible { outline: none; box-shadow: var(--ring-focus); }
 select { font-family: var(--font-mono); color: var(--bone); background-color: var(--panel); border: 1px solid var(--iron-border); cursor: pointer; }
 select:focus { outline: none; border-color: var(--accent); }
 option { background: var(--panel); color: var(--bone); }
