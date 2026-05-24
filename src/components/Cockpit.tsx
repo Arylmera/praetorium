@@ -122,6 +122,7 @@ export function Cockpit() {
   });
   const [zoom, setZoom] = createSignal(1);
   const [pan, setPan] = createSignal({ x: 0, y: 0 });
+  const [hover, setHover] = createSignal<{ x: number; y: number; text: string } | null>(null);
   let svgEl: SVGSVGElement | undefined;
   const viewBox = createMemo(() => {
     const b = bounds();
@@ -172,8 +173,10 @@ export function Cockpit() {
           const r = (n.kind === "master" || n.kind === "project") ? 14 : n.kind === "agent" ? 10 : 7;
           return (
             <Show when={p()}>
-              <g>
-                <title>{fullLabel(n)}</title>
+              <g style={{ cursor: "pointer" }}
+                onMouseEnter={(e) => setHover({ x: e.clientX, y: e.clientY, text: fullLabel(n) })}
+                onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY, text: fullLabel(n) })}
+                onMouseLeave={() => setHover(null)}>
                 <circle class="cockpit-node" cx={p()!.x} cy={p()!.y} r={r} fill="var(--panel)" stroke={nodeStroke(n)} stroke-width="2" />
                 <text x={p()!.x + r + 4} y={p()!.y + 4} fill="var(--fg)" style={{ "font-size": "11px" }}>{nodeLabel(n)}</text>
               </g>
@@ -181,6 +184,14 @@ export function Cockpit() {
           );
         }}</For>
       </svg>
+      <Show when={hover()}>
+        <div style={{ position: "fixed", left: `${hover()!.x + 14}px`, top: `${hover()!.y + 14}px`, "z-index": "10",
+          "max-width": "420px", background: "var(--panel)", border: "1px solid var(--accent)", "border-radius": "5px",
+          padding: "6px 9px", "font-size": "12px", color: "var(--fg)", "white-space": "pre-wrap",
+          "pointer-events": "none", "box-shadow": "0 4px 14px rgba(0,0,0,.5)" }}>
+          {hover()!.text}
+        </div>
+      </Show>
     </div>
   );
 }
