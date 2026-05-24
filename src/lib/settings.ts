@@ -21,7 +21,7 @@ export function setGlass(v: boolean) {
 
 const LAYOUT_KEY = "praetorium.layout";
 const [layoutName, setLayoutSignal] = createSignal<"radial" | "hierarchical">(
-  (localStorage.getItem(LAYOUT_KEY) as "radial" | "hierarchical") || "radial");
+  (localStorage.getItem(LAYOUT_KEY) as "radial" | "hierarchical") || "hierarchical");
 export { layoutName };
 export function setLayout(v: "radial" | "hierarchical") {
   localStorage.setItem(LAYOUT_KEY, v);

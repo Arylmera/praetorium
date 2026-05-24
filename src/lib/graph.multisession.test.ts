@@ -30,4 +30,19 @@ describe("reduceWatch constellation", () => {
     expect(g.edges.has("proj:Terra->s2:master")).toBe(true);
     expect([...g.nodes.values()].filter((n) => n.kind === "project").length).toBe(2); // Terra + Other
   });
+  it("nests a worktree session under its parent repo (repo -> worktree -> master)", () => {
+    const g = ([
+      { type: "session", data: { sessionId: "s1", project: "gallant-tesla-f7dbcd", repo: "praetorium", agentRef: "master", event: { kind: "turn", data: { role: "user", text: "hi" } } } },
+    ] as WatchEvent[]).reduce(reduceWatch, emptyGraph());
+    expect(g.nodes.get("proj:praetorium")?.kind).toBe("project");
+    expect(g.nodes.get("proj:gallant-tesla-f7dbcd")?.kind).toBe("project");
+    expect(g.edges.has("proj:praetorium->proj:gallant-tesla-f7dbcd")).toBe(true);
+    expect(g.edges.has("proj:gallant-tesla-f7dbcd->s1:master")).toBe(true);
+  });
+  it("does not add a parent repo node when repo equals project", () => {
+    const g = ([
+      { type: "session", data: { sessionId: "s1", project: "praet", repo: "praet", agentRef: "master", event: { kind: "turn", data: { role: "user", text: "hi" } } } },
+    ] as WatchEvent[]).reduce(reduceWatch, emptyGraph());
+    expect([...g.nodes.values()].filter((n) => n.kind === "project").length).toBe(1);
+  });
 });

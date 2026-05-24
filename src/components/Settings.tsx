@@ -1,7 +1,7 @@
 import { For } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { THEME_LIST, theme, setTheme, type ThemeGroup, type ThemeInfo } from "../themes/theme";
-import { layoutName, setLayout, glass, setGlass, reduceMotion, setReduceMotion, applyReduceMotion } from "../lib/settings";
+import { glass, setGlass, reduceMotion, setReduceMotion, applyReduceMotion } from "../lib/settings";
 import { vaultPath, setVaultPath } from "../lib/vaultStore";
 
 async function pickVault() {
@@ -77,14 +77,6 @@ export function Settings() {
             <ThemeGrid group="dark" />
             <ThemeGrid group="light" />
             <ThemeGrid group="special" />
-          </div>
-
-          <div class="pr-set-section">
-            <div class="pr-set-section-head"><span class="h">GRAPH LAYOUT</span></div>
-            <div class="pr-seg">
-              <button class={layoutName() === "radial" ? "is-active" : ""} onClick={() => setLayout("radial")}>radial</button>
-              <button class={layoutName() === "hierarchical" ? "is-active" : ""} onClick={() => setLayout("hierarchical")}>hierarchical</button>
-            </div>
           </div>
 
           <div class="pr-set-section">

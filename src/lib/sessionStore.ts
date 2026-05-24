@@ -32,6 +32,26 @@ export function clearSession(id: string): void {
   setGraph((g) => clearGraphSession(g, id));
 }
 
+/** Seed an empty session so it appears in the rail before any turns arrive.
+ *  No-op if the session already exists. */
+export function ensureSession(sid: string, project?: string) {
+  setSessions((prev) => {
+    if (prev.has(sid)) return prev;
+    return new Map(prev).set(sid, { project, lines: [] });
+  });
+}
+
+/** Remove a session entirely (used when closing a local session). */
+export function removeSession(sid: string) {
+  setSessions((prev) => {
+    if (!prev.has(sid)) return prev;
+    const next = new Map(prev);
+    next.delete(sid);
+    return next;
+  });
+  if (activeId() === sid) setActiveId(null);
+}
+
 export async function refreshMetas(): Promise<void> {
   const list = await listLiveSessions();
   setMetas(new Map(list.map((m) => [m.id, m])));

@@ -1,27 +1,70 @@
 import { createSignal } from "solid-js";
-import { runClaude } from "./claude";
-import { applyWatch, clearSession, setActiveId } from "./sessionStore";
+import { runClaude, stopClaude } from "./claude";
+import { applyWatch, ensureSession, removeSession, setActiveId, activeId } from "./sessionStore";
 import type { ClaudeEvent, WatchEvent, SessionEvent } from "./types";
 
-const LOCAL_SID = "local";
 const LOCAL_PROJECT = "local run";
 
-const [running, setRunning] = createSignal(false);
-// Real session id claude assigns to the current local run (from its stream-json
-// "system"/init line). The file watcher independently re-discovers this same
-// transcript on disk under this id; the Console uses it to hide that duplicate,
-// since the run already shows live under the synthetic "local" session.
-const [localSessionId, setLocalSessionId] = createSignal<string | null>(null);
-export { running, localSessionId };
+export type RunStatus = "idle" | "running" | "done" | "failed" | "stopped";
 
-/** Start a fresh local conversation: drop the resume id and wipe the local
- *  session's transcript/timeline so the next prompt begins anew. Re-focuses the
- *  local console. No-op while a run is in flight. */
-export function resetLocal(): void {
-  if (running()) return;
-  setLocalSessionId(null);
-  clearSession(LOCAL_SID);
-  setActiveId(LOCAL_SID);
+export interface LocalSession {
+  sid: string;
+  label?: string;
+  cwd?: string;
+  model?: string;
+  claudeSessionId?: string;
+  status: RunStatus;
+  runId?: string;
+}
+
+/** Pure status transition for a session given a streamed event. `stopped` is sticky. */
+export function nextStatus(prev: RunStatus, ev: ClaudeEvent): RunStatus {
+  if (prev === "stopped") return "stopped";
+  switch (ev.type) {
+    case "runError":
+      return "failed";
+    case "result":
+      return ev.data.isError ? "failed" : prev;
+    case "runComplete":
+      return prev === "failed" ? "failed" : "done";
+    default:
+      return prev;
+  }
+}
+
+/** True for any locally-launched session id ("local", "local-2", …). */
+export function isLocalSession(id: string | null | undefined): id is string {
+  return !!id && (id === "local" || id.startsWith("local-"));
+}
+
+const [localSessions, setLocalSessions] = createSignal<Map<string, LocalSession>>(new Map());
+export { localSessions };
+
+export function isRunning(sid: string): boolean {
+  return localSessions().get(sid)?.status === "running";
+}
+export function anyRunning(): boolean {
+  return [...localSessions().values()].some((s) => s.status === "running");
+}
+
+function updateSession(sid: string, patch: Partial<LocalSession>) {
+  setLocalSessions((prev) => {
+    const cur = prev.get(sid);
+    if (!cur) return prev;
+    return new Map(prev).set(sid, { ...cur, ...patch });
+  });
+}
+
+let localCount = 0;
+/** Allocate a fresh local session ("local", then "local-2", …), seed it so it
+ *  shows in the rail immediately, make it active, and return its id. */
+export function newLocalSession(): string {
+  localCount += 1;
+  const sid = localCount === 1 ? "local" : `local-${localCount}`;
+  setLocalSessions((prev) => new Map(prev).set(sid, { sid, status: "idle" }));
+  ensureSession(sid);
+  setActiveId(sid);
+  return sid;
 }
 
 /** Derive the local session's project label from the chosen cwd: its basename,
@@ -33,12 +76,21 @@ export function cwdLabel(cwd?: string): string {
   return base || LOCAL_PROJECT;
 }
 
+/** Parent-repo label for a git-worktree cwd (.../<repo>/.claude/worktrees/<name>).
+ *  Returns the segment just before `.claude` so worktrees nest under their repo;
+ *  undefined when the cwd isn't inside a worktree. */
+export function repoLabel(cwd?: string): string | undefined {
+  if (!cwd) return undefined;
+  const parts = cwd.replace(/[/\\]+$/, "").split(/[/\\]/).filter(Boolean);
+  const i = parts.findIndex((p, idx) => p === ".claude" && parts[idx + 1] === "worktrees");
+  return i > 0 ? parts[i - 1] : undefined;
+}
+
 /** Translate a locally-launched run's ClaudeEvent into a WatchEvent so the app's
- *  own run flows through the same sessionStore pipeline as observed sessions —
- *  appearing as a "local" session in the Console rail and the Cockpit constellation. */
-function toWatch(ev: ClaudeEvent, project: string): WatchEvent | null {
+ *  own run flows through the same sessionStore pipeline as observed sessions. */
+function toWatch(ev: ClaudeEvent, sid: string, project: string, repo?: string): WatchEvent | null {
   const wrap = (agentRef: string, event: SessionEvent): WatchEvent =>
-    ({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef, event } });
+    ({ type: "session", data: { sessionId: sid, project, repo, agentRef, event } });
   switch (ev.type) {
     case "assistantText":
       return wrap(ev.data.parentToolUseId ?? "master", { kind: "turn", data: { role: "assistant", text: ev.data.text } });
@@ -53,30 +105,61 @@ function toWatch(ev: ClaudeEvent, project: string): WatchEvent | null {
   }
 }
 
-export async function startRun(prompt: string, opts?: { cwd?: string; model?: string }): Promise<void> {
-  if (running() || !prompt.trim()) return;
-  const project = cwdLabel(opts?.cwd);
-  // Echo the prompt as a user turn in the local session.
-  applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef: "master", event: { kind: "turn", data: { role: "user", text: prompt } } } });
-  setRunning(true);
-  // Continue the prior local run when one exists, so follow-ups keep context;
-  // no id (first prompt or after NEW) starts a fresh session — pass opts untouched
-  // then so callers that omit opts still forward `undefined`.
-  const id = localSessionId();
-  const runOpts = id ? { ...opts, resume: id } : opts;
+export async function startRun(sid: string, prompt: string, opts?: { cwd?: string; model?: string }): Promise<void> {
+  const s = localSessions().get(sid);
+  if (!s || s.status === "running" || !prompt.trim()) return;
+  // Lock cwd/model onto the thread on the first run; ignore opts thereafter.
+  const cwd = s.cwd ?? opts?.cwd;
+  const model = s.model ?? opts?.model;
+  const project = s.label ?? cwdLabel(cwd);
+  const repo = repoLabel(cwd);
+  const runId = crypto.randomUUID();
+  const resumeId = s.claudeSessionId;
+  const turn = (role: string, text: string): WatchEvent =>
+    ({ type: "session", data: { sessionId: sid, project, repo, agentRef: "master", event: { kind: "turn", data: { role, text } } } });
+
+  updateSession(sid, { status: "running", runId, cwd, model });
+  applyWatch(turn("user", prompt));
   try {
-    await runClaude(prompt, (ev: ClaudeEvent) => {
-      const w = toWatch(ev, project);
+    await runClaude(runId, prompt, (ev: ClaudeEvent) => {
+      if (ev.type === "systemInit") updateSession(sid, { claudeSessionId: ev.data.sessionId });
+      const w = toWatch(ev, sid, project, repo);
       if (w) applyWatch(w);
-      else if (ev.type === "systemInit") setLocalSessionId(ev.data.sessionId);
-      else if (ev.type === "result" && ev.data.isError) {
-        applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: ev.data.result } } } });
-      } else if (ev.type === "runError") {
-        applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: ev.data.message } } } });
-      } else if (ev.type === "runComplete") setRunning(false);
-    }, runOpts);
+      else if (ev.type === "result" && ev.data.isError) applyWatch(turn("assistant", ev.data.result));
+      else if (ev.type === "runError") applyWatch(turn("assistant", ev.data.message));
+      const prev = localSessions().get(sid)?.status ?? "running";
+      updateSession(sid, { status: nextStatus(prev, ev) });
+    }, { cwd, model, resumeId });
   } catch (e) {
-    applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: String(e) } } } });
-    setRunning(false);
+    applyWatch(turn("assistant", String(e)));
+    updateSession(sid, { status: "failed" });
   }
+}
+
+export async function stopRun(sid: string): Promise<void> {
+  const s = localSessions().get(sid);
+  if (!s || s.status !== "running" || !s.runId) return;
+  updateSession(sid, { status: "stopped" });
+  await stopClaude(s.runId);
+}
+
+export async function closeSession(sid: string): Promise<void> {
+  const s = localSessions().get(sid);
+  if (!s) return;
+  if (s.status === "running") await stopRun(sid);
+  setLocalSessions((prev) => {
+    if (!prev.has(sid)) return prev;
+    const next = new Map(prev);
+    next.delete(sid);
+    return next;
+  });
+  removeSession(sid);
+  if (activeId() === null) {
+    const fallback = [...localSessions().keys()][0];
+    if (fallback) setActiveId(fallback);
+  }
+}
+
+export function renameSession(sid: string, label: string) {
+  updateSession(sid, { label: label.trim() || undefined });
 }
