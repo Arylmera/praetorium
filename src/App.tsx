@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from "solid-js";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { Console } from "./components/Console";
 import { Cockpit } from "./components/Cockpit";
@@ -7,7 +7,9 @@ import { Settings } from "./components/Settings";
 import { WindowControls } from "./components/WindowControls";
 import { AmbientCanvas } from "./components/AmbientCanvas";
 import { SpecialChrome } from "./components/SpecialChrome";
+import { CommandPalette } from "./components/CommandPalette";
 import { ViewSwitcher, type View } from "./components/ViewSwitcher";
+import { view, setView } from "./lib/viewStore";
 
 const ROUTES: Record<View, () => any> = {
   console: Console,
@@ -21,7 +23,18 @@ import { applyWatch, refreshMetas } from "./lib/sessionStore";
 import { watchSessions } from "./lib/sessions";
 
 function App() {
-  const [view, setView] = createSignal<View>("console");
+  const [paletteOpen, setPaletteOpen] = createSignal(false);
+  // Global Ctrl/Cmd+K toggles the command palette.
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    onCleanup(() => window.removeEventListener("keydown", onKey));
+  });
   // Enforce frameless chrome at runtime — guarantees no native title bar even if
   // the embedded tauri.conf.json decorations flag is stale in an incremental build.
   onMount(() => {
@@ -51,7 +64,7 @@ function App() {
           <span class="pr-prompt-cursor">▍</span>
         </div>
 
-        <ViewSwitcher view={view} setView={setView} />
+        <ViewSwitcher />
 
         <div class="pr-topbar-actions">
           <span class="pr-brand-sub">v0.4-dev</span>
@@ -83,6 +96,8 @@ function App() {
         <span class="item">glass <span class="v">{glass() ? "on" : "off"}</span></span>
         <span class="item">tauri <span class="v">2.0</span></span>
       </footer>
+
+      <CommandPalette open={paletteOpen()} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }
