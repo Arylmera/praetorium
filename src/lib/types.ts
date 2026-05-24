@@ -21,6 +21,7 @@ export interface GraphNode {
   status: NodeStatus;
   session?: string;
   weight?: number;
+  community?: number;
 }
 export interface GraphEdge {
   id: string;       // `${source}->${target}`

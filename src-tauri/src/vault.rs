@@ -61,3 +61,10 @@ pub async fn read_cartographicum(vault_path: String) -> Result<String, String> {
     let p = std::path::Path::new(&vault_path).join("_Cartographicum").join("meta.json");
     tokio::fs::read_to_string(&p).await.map_err(|e| format!("read failed: {e}"))
 }
+
+/// Read a top-level folder's per-folder Cartographicum graph (raw JSON text).
+#[tauri::command]
+pub async fn read_folder_graph(folder_path: String) -> Result<String, String> {
+    let p = std::path::Path::new(&folder_path).join("_Cartographicum").join("graph.json");
+    tokio::fs::read_to_string(&p).await.map_err(|e| format!("read failed: {e}"))
+}
