@@ -46,7 +46,7 @@ export type SessionEvent =
   | { kind: "turn"; data: { role: string; text: string } }
   | { kind: "subagentSpawn"; data: { toolUseId: string; subagentType: string } }
   | { kind: "toolActivity"; data: { toolUseId: string; name: string; filePath: string | null } }
-  | { kind: "agentDone"; data: { toolUseId: string; isError: boolean } };
+  | { kind: "toolDone"; data: { toolUseId: string; isError: boolean } };
 
 export type WatchEvent =
   | { type: "session"; data: { sessionId: string; project: string; agentRef: string; event: SessionEvent } }
