@@ -1,4 +1,4 @@
-import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, forceX, forceY, type SimulationNodeDatum } from "d3-force";
+import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, forceX, forceY, forceRadial, type SimulationNodeDatum } from "d3-force";
 import { stratify, tree } from "d3-hierarchy";
 import type { GraphState } from "./types";
 
@@ -16,16 +16,55 @@ interface SimNode extends SimulationNodeDatum {
   id: string;
 }
 
+// BFS hop-distance from the root(s). Roots = nodes with no incoming edge (or, if
+// the graph is fully cyclic, every node falls back to depth 0). Edges are walked
+// undirected so children of a hub all land one ring out regardless of direction.
+function bfsDepth(state: GraphState): Map<string, number> {
+  const adj = new Map<string, string[]>();
+  for (const id of state.nodes.keys()) adj.set(id, []);
+  const hasIncoming = new Set<string>();
+  for (const e of state.edges.values()) {
+    adj.get(e.source)?.push(e.target);
+    adj.get(e.target)?.push(e.source);
+    hasIncoming.add(e.target);
+  }
+  const depth = new Map<string, number>();
+  const queue: string[] = [];
+  for (const id of state.nodes.keys()) {
+    if (!hasIncoming.has(id)) { depth.set(id, 0); queue.push(id); }
+  }
+  // Fully cyclic / no clear root: seed BFS from an arbitrary node.
+  if (queue.length === 0 && state.nodes.size > 0) {
+    const first = state.nodes.keys().next().value as string;
+    depth.set(first, 0); queue.push(first);
+  }
+  while (queue.length) {
+    const cur = queue.shift()!;
+    const d = depth.get(cur)!;
+    for (const next of adj.get(cur) ?? []) {
+      if (!depth.has(next)) { depth.set(next, d + 1); queue.push(next); }
+    }
+  }
+  return depth;
+}
+
 export class RadialForceLayout implements LayoutStrategy {
   readonly name = "radial";
   layout(state: GraphState, width: number, height: number): PositionedNode[] {
     const nodes: SimNode[] = [...state.nodes.keys()].map((id) => ({ id }));
     const links = [...state.edges.values()].map((e) => ({ source: e.source, target: e.target }));
+    // Graph distance from the root(s) → concentric rings. Parents/children stay
+    // radially ordered, which prevents most spoke crossings while charge+collide
+    // keep the ring positions jittered (organic, not a rigid dendrogram).
+    const depth = bfsDepth(state);
+    const ring = Math.min(width, height) / 2 / (Math.max(0, ...depth.values()) + 1);
+    const cx = width / 2, cy = height / 2;
     const sim = forceSimulation(nodes)
       .force("charge", forceManyBody().strength(-520))
       .force("link", forceLink(links).id((d: any) => d.id).distance(140))
-      .force("center", forceCenter(width / 2, height / 2))
+      .force("center", forceCenter(cx, cy))
       .force("collide", forceCollide(70)) // keep nodes (and their labels) from overlapping
+      .force("radial", forceRadial<SimNode>((d) => (depth.get(d.id) ?? 0) * ring, cx, cy).strength(0.45))
       // Gently pull every node toward the middle so DISCONNECTED components (e.g. an
       // orphan agent cluster) sit close to the rest instead of flying to the corners.
       .force("x", forceX(width / 2).strength(0.08))
