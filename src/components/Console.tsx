@@ -7,47 +7,78 @@ export function Console() {
   // Show only live sessions (in the index, active within ~10 min) + the local run; hide archived.
   const list = () => [...sessions().entries()].filter(([id]) => id === "local" || metas().has(id));
   const active = () => (activeId() ? sessions().get(activeId()!) : undefined);
+  const activeTitle = () => {
+    const id = activeId();
+    if (!id) return "";
+    return metas().get(id)?.title ?? sessions().get(id)?.project ?? id.slice(0, 8);
+  };
   async function submit(e: Event) { e.preventDefault(); const p = prompt(); setPrompt(""); await startRun(p); }
+
   return (
-    <div style={{ display: "grid", "grid-template-columns": "240px 1fr", height: "100%" }}>
-      <div style={{ overflow: "auto", "border-right": "1px solid var(--border)", padding: "8px" }}>
-        <For each={list()}>{([id, s]) => {
-          const m = () => metas().get(id);
-          return (
-            <div onClick={() => setActiveId(id)} style={{ cursor: "pointer", padding: "5px 6px", "font-size": "12px",
-              color: id === activeId() ? "var(--accent)" : "var(--fg)" }} title={id}>
-              ● {m()?.title ?? s.project ?? id.slice(0, 8)}
-              <div style={{ "font-size": "10px", color: "var(--accent-dim)" }}>{m()?.project ?? ""}</div>
-            </div>
-          );
-        }}</For>
-      </div>
-      <div style={{ display: "flex", "flex-direction": "column", height: "100%" }}>
-        <div style={{ flex: "1", overflow: "auto", padding: "12px", "font-family": "var(--mono, monospace)", "font-size": "13px" }}>
+    <div class="pr-console-grid">
+      {/* live sessions */}
+      <aside class="pr-sessions">
+        <div class="pr-sessions-head">
+          <span class="pr-sessions-title">LIVE SESSIONS</span>
+          <span class="pr-sessions-sub">{list().length} active</span>
+        </div>
+        <div class="pr-sessions-list">
+          <For each={list()}>{([id, s]) => {
+            const m = () => metas().get(id);
+            return (
+              <div class={`pr-session${id === activeId() ? " is-active" : ""}`} onClick={() => setActiveId(id)} title={id}>
+                <span class="pr-session-bullet" />
+                <span class="pr-session-title">{m()?.title ?? s.project ?? id.slice(0, 8)}</span>
+                <span class="pr-session-time">{id === "local" ? "now" : ""}</span>
+                <span class="pr-session-project">{m()?.project ?? s.project ?? ""}</span>
+              </div>
+            );
+          }}</For>
+        </div>
+      </aside>
+
+      {/* stream */}
+      <section class="pr-console-right">
+        <div class="pr-stream-head">
+          <div class="pr-stream-crumb">
+            <span>local</span><span class="pr-crumb-sep">/</span>
+            <b>{activeTitle()}</b>
+          </div>
+          <div class="pr-stream-stats">
+            <div class="pr-stream-stat"><span class="lbl">TURNS</span><span class="val">{active()?.lines.length ?? 0}</span></div>
+          </div>
+        </div>
+
+        <div class="pr-stream">
           <Show when={active()}>
             <For each={active()!.lines}>{(l) => {
               const isSub = l.agentRef !== "master";
               const subName = () => subagentTypes().get(`${activeId()}:${l.agentRef}`) ?? l.agentRef;
               return (
-                <div style={{ "margin-left": isSub ? "20px" : "0",
-                  "border-left": isSub ? "2px solid var(--accent-dim)" : "none",
-                  "padding-left": isSub ? "8px" : "0", margin: "4px 0" }}>
-                  <Show when={isSub}>
-                    <div style={{ color: "var(--accent-dim)", "font-size": "10px", "text-transform": "uppercase", "letter-spacing": "1px" }}>⤷ {subName()}</div>
-                  </Show>
-                  <pre style={{ margin: "2px 0", "white-space": "pre-wrap",
-                    color: l.role === "user" ? "var(--accent)" : "var(--fg)" }}>{l.text}</pre>
-                </div>
+                <Show when={isSub} fallback={
+                  <div class={l.role === "user" ? "pr-line pr-line-prompt" : "pr-line pr-line-asst"}>{l.text}</div>
+                }>
+                  <div class="pr-sub">
+                    <div class="pr-sub-role">{subName()}</div>
+                    <div class="pr-sub-body">{l.text}</div>
+                  </div>
+                </Show>
               );
             }}</For>
           </Show>
         </div>
-        <form onSubmit={submit} style={{ display: "flex", gap: "8px", padding: "12px", "border-top": "1px solid var(--border)" }}>
-          <input style={{ flex: "1", background: "var(--panel)", color: "var(--fg)", border: "1px solid var(--border)", padding: "8px" }}
-            value={prompt()} onInput={(e) => setPrompt(e.currentTarget.value)} placeholder={running() ? "running…" : "Ask Claude (this machine)"} disabled={running()} />
-          <button type="submit" disabled={running()}>Run</button>
+
+        <form class="pr-inputbar" onSubmit={submit}>
+          <div class="pr-input-wrap">
+            <span class="pr-input-ps">$</span>
+            <input class="pr-input" value={prompt()} onInput={(e) => setPrompt(e.currentTarget.value)}
+              placeholder={running() ? "running…" : "ask Claude (this machine)…"} disabled={running()} />
+          </div>
+          <button class={`pr-run${running() ? " is-running" : ""}`} type="submit" disabled={running()}>
+            {running() ? "RUNNING" : "RUN"}
+          </button>
         </form>
-      </div>
+      </section>
     </div>
   );
 }

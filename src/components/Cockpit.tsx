@@ -142,14 +142,18 @@ export function Cockpit() {
   }
   function onUp() { drag = false; }
   function reset() { setZoom(1); setPan({ x: 0, y: 0 }); }
+  const counts = createMemo(() => {
+    const g = displayGraph();
+    let agents = 0, folders = 0;
+    for (const n of g.nodes.values()) { if (n.kind === "agent") agents++; else if (n.kind === "folder") folders++; }
+    return { agents, folders, pulses: g.activity.length };
+  });
   return (
-    <div style={{ position: "relative", height: "100%", overflow: "hidden" }}>
-      <div style={{ position: "absolute", top: "10px", left: "12px", "z-index": "2", "max-width": "340px",
-        background: "var(--panel)", border: "1px solid var(--border)", "border-radius": "6px", padding: "8px 10px",
-        "font-size": "11px", color: "var(--fg)", opacity: "0.92" }}>
-        <div style={{ color: "var(--accent)", "font-weight": "700", "margin-bottom": "3px" }}>Cockpit — live agent graph</div>
-        <div><b>project</b> → its <b>sessions</b> (colour per session) → <b>subagents</b>, each linked to the <b>folders</b> it touches. Folders touched by multiple sessions are shared. Pulses = live file activity.</div>
-        <div style={{ "margin-top": "4px", color: "var(--accent-dim)" }}>Scroll to zoom · drag to pan · <span style={{ cursor: "pointer", "text-decoration": "underline" }} onClick={reset}>reset</span></div>
+    <div class="pr-cockpit">
+      <div class="pr-info-card">
+        <h3>LIVE AGENT GRAPH</h3>
+        <p>Each <b>project</b> spawns <b>sessions</b> (one per master) which dispatch <b>subagents</b> linked to the <b>folders</b> they touch. Folders shared by multiple sessions stay shared. Pulses = live file reads.</p>
+        <div class="pr-info-meta">scroll = zoom · drag = pan · <a onClick={reset}>reset</a></div>
       </div>
       <svg ref={svgEl} width="100%" height="100%" viewBox={viewBox()} preserveAspectRatio="xMidYMid meet"
         style={{ cursor: "grab", "touch-action": "none" }}
@@ -178,17 +182,21 @@ export function Cockpit() {
                 onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY, text: fullLabel(n) })}
                 onMouseLeave={() => setHover(null)}>
                 <circle class="cockpit-node" cx={p()!.x} cy={p()!.y} r={r} fill="var(--panel)" stroke={nodeStroke(n)} stroke-width="2" />
-                <text x={p()!.x + r + 4} y={p()!.y + 4} fill="var(--fg)" style={{ "font-size": "11px" }}>{nodeLabel(n)}</text>
+                <text class="pr-node-label" x={p()!.x + r + 4} y={p()!.y + 4}>{nodeLabel(n)}</text>
               </g>
             </Show>
           );
         }}</For>
       </svg>
+
+      <div class="pr-cockpit-stats">
+        <div class="pr-cs-cell"><span class="pr-cs-lbl">AGENTS</span><span class="pr-cs-val">{counts().agents}<small>active</small></span></div>
+        <div class="pr-cs-cell"><span class="pr-cs-lbl">FOLDERS</span><span class="pr-cs-val">{counts().folders}<small>touched</small></span></div>
+        <div class="pr-cs-cell"><span class="pr-cs-lbl">PULSES</span><span class="pr-cs-val">{counts().pulses}<small>live</small></span></div>
+      </div>
+
       <Show when={hover()}>
-        <div style={{ position: "fixed", left: `${hover()!.x + 14}px`, top: `${hover()!.y + 14}px`, "z-index": "10",
-          "max-width": "420px", background: "var(--panel)", border: "1px solid var(--accent)", "border-radius": "5px",
-          padding: "6px 9px", "font-size": "12px", color: "var(--fg)", "white-space": "pre-wrap",
-          "pointer-events": "none", "box-shadow": "0 4px 14px rgba(0,0,0,.5)" }}>
+        <div class="pr-tooltip" style={{ left: `${hover()!.x + 14}px`, top: `${hover()!.y + 14}px` }}>
           {hover()!.text}
         </div>
       </Show>
