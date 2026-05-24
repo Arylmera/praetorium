@@ -40,7 +40,7 @@ const fullLabel = (n: { kind: string; session?: string; label: string; weight?: 
 
 /** A session is visible while it's in the live index (active within ~10 min) — the
  *  local run is always shown. Archived (older) sessions are pruned from the graph. */
-const visibleSession = (sid?: string) => !sid || sid === "local" || metas().has(sid);
+const visibleSession = (sid?: string) => !sid || sid === "local" || sid.startsWith("local-") || metas().has(sid);
 
 /** Drop nodes belonging to archived sessions, then any folder/project left with no edges. */
 function pruneArchived(g: GraphState): GraphState {

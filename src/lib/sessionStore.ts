@@ -17,6 +17,15 @@ const [subagentTypes, setSubagentTypes] = createSignal<Map<string, string>>(new 
 
 export { sessions, graph, insights, activeId, setActiveId, metas, subagentTypes };
 
+/** Seed an empty session so it appears in the rail before any turns arrive.
+ *  No-op if the session already exists. */
+export function ensureSession(sid: string, project?: string) {
+  setSessions((prev) => {
+    if (prev.has(sid)) return prev;
+    return new Map(prev).set(sid, { project, lines: [] });
+  });
+}
+
 export async function refreshMetas(): Promise<void> {
   const list = await listLiveSessions();
   setMetas(new Map(list.map((m) => [m.id, m])));

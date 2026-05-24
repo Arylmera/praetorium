@@ -2,7 +2,7 @@ import { For, Show, createSignal, onCleanup } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { sessions, insights, activeId, setActiveId, metas, subagentTypes } from "../lib/sessionStore";
 import { failures, type ToolCall } from "../lib/insightsStore";
-import { startRun, running, cwdLabel } from "../lib/runStore";
+import { startRun, isRunning, newLocalSession, isLocalSession, cwdLabel } from "../lib/runStore";
 
 export function Console() {
   const [prompt, setPrompt] = createSignal("");
@@ -15,9 +15,12 @@ export function Console() {
   onCleanup(() => clearInterval(tick));
   let streamRef: HTMLDivElement | undefined;
 
-  // Show only live sessions (in the index, active within ~10 min) + the local run; hide archived.
-  const list = () => [...sessions().entries()].filter(([id]) => id === "local" || metas().has(id));
+  // Show only live sessions (in the index, active within ~10 min) + local runs; hide archived.
+  const list = () => [...sessions().entries()].filter(([id]) => isLocalSession(id) || metas().has(id));
   const active = () => (activeId() ? sessions().get(activeId()!) : undefined);
+  // Disable the input/RUN only when the *active* local session is itself in-flight,
+  // so other sessions can keep running concurrently.
+  const activeRunning = () => { const id = activeId(); return isLocalSession(id) && isRunning(id); };
 
   // ---- Run Insights: tool-call timeline + failure radar ----
   const calls = (id: string | null): ToolCall[] => (id ? insights().get(id) ?? [] : []);
@@ -55,12 +58,17 @@ export function Console() {
   async function submit(e: Event) {
     e.preventDefault();
     const p = prompt();
+    if (!p.trim()) return;
     setPrompt("");
     const m = model();
-    await startRun(p, { cwd: cwd(), model: m === "default" ? undefined : m });
+    // Launch into the active local session, or spin up a fresh one if the
+    // current selection is an observed (non-local) session or none.
+    const id = activeId();
+    const sid = isLocalSession(id) ? id : newLocalSession();
+    await startRun(sid, p, { cwd: cwd(), model: m === "default" ? undefined : m });
   }
   async function pickCwd() {
-    if (running()) return;
+    if (activeRunning()) return;
     const picked = await open({ directory: true, multiple: false });
     if (typeof picked === "string") setCwd(picked);
   }
@@ -94,6 +102,8 @@ export function Console() {
         <div class="pr-sessions-head">
           <span class="pr-sessions-title">LIVE SESSIONS</span>
           <span class="pr-sessions-sub">{list().length} active</span>
+          <button class="pr-new-session" type="button" onClick={() => newLocalSession()}
+            title="start a new local session">+ NEW</button>
         </div>
         <div class="pr-sessions-list">
           <For each={list()}>{([id, s]) => {
@@ -102,7 +112,7 @@ export function Console() {
               <div class={`pr-session${id === activeId() ? " is-active" : ""}`} onClick={() => setActiveId(id)} title={id}>
                 <span class={`pr-session-bullet${failCount(id) > 0 ? " is-failed" : ""}`} />
                 <span class="pr-session-title">{m()?.title ?? s.project ?? id.slice(0, 8)}</span>
-                <span class="pr-session-time">{id === "local" ? "now" : ""}</span>
+                <span class="pr-session-time">{isLocalSession(id) ? (isRunning(id) ? "live" : "now") : ""}</span>
                 <span class="pr-session-project">{m()?.project ?? s.project ?? ""}</span>
               </div>
             );
@@ -202,15 +212,15 @@ export function Console() {
 
         <form class="pr-inputbar" onSubmit={submit}>
           <div class="pr-launch-opts">
-            <button type="button" class="pr-cwd-chip" onClick={pickCwd} disabled={running()}
+            <button type="button" class="pr-cwd-chip" onClick={pickCwd} disabled={activeRunning()}
               title={cwd() ?? "run in app's working directory"}>
               <span class="pr-cwd-label">{cwd() ? cwdLabel(cwd()) : "cwd: default"}</span>
               <Show when={cwd()}>
                 <span class="pr-cwd-clear" role="button" aria-label="clear working directory"
-                  onClick={(e) => { e.stopPropagation(); if (!running()) setCwd(undefined); }}>×</span>
+                  onClick={(e) => { e.stopPropagation(); if (!activeRunning()) setCwd(undefined); }}>×</span>
               </Show>
             </button>
-            <select class="pr-model-select" value={model()} disabled={running()}
+            <select class="pr-model-select" value={model()} disabled={activeRunning()}
               onChange={(e) => setModel(e.currentTarget.value)}>
               <option value="default">default</option>
               <option value="opus">opus</option>
@@ -221,10 +231,10 @@ export function Console() {
           <div class="pr-input-wrap">
             <span class="pr-input-ps">$</span>
             <input class="pr-input" value={prompt()} onInput={(e) => setPrompt(e.currentTarget.value)}
-              placeholder={running() ? "running…" : "ask Claude (this machine)…"} disabled={running()} />
+              placeholder={activeRunning() ? "running…" : "ask Claude (this machine)…"} disabled={activeRunning()} />
           </div>
-          <button class={`pr-run${running() ? " is-running" : ""}`} type="submit" disabled={running()}>
-            {running() ? "RUNNING" : "RUN"}
+          <button class={`pr-run${activeRunning() ? " is-running" : ""}`} type="submit" disabled={activeRunning()}>
+            {activeRunning() ? "RUNNING" : "RUN"}
           </button>
         </form>
       </section>

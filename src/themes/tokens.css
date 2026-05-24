@@ -276,6 +276,8 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 .pr-sessions-title { font: var(--t-card-title); text-transform: uppercase; letter-spacing: 0.1em; color: var(--bone); display: inline-flex; align-items: center; gap: 10px; }
 .pr-sessions-title::before { content: ""; display: inline-block; width: 16px; height: 2px; background: var(--accent); flex: 0 0 auto; }
 .pr-sessions-sub { font: 500 10px var(--font-mono); color: var(--gull-2); text-transform: uppercase; letter-spacing: 0.1em; padding-left: 26px; }
+.pr-new-session { align-self: flex-start; margin-left: 26px; background: var(--panel-2); border: 1px solid var(--iron-border); border-radius: var(--radius-sm); color: var(--gull); padding: 3px 9px; cursor: pointer; font: 500 10px var(--font-mono); text-transform: uppercase; letter-spacing: 0.1em; transition: border-color var(--dur-snap), color var(--dur-snap); }
+.pr-new-session:hover { border-color: var(--accent); color: var(--accent); }
 
 .pr-sessions-list { overflow: auto; flex: 1; padding: 6px 0; }
 .pr-session { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: baseline; padding: 8px 14px; cursor: pointer; border-left: 2px solid transparent; transition: background var(--dur-row-hover); }
