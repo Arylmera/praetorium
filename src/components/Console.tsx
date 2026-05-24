@@ -79,16 +79,25 @@ export function Console() {
                   <div class={l.role === "user" ? "pr-line pr-line-prompt" : "pr-line pr-line-asst"}>{l.text}</div>
                 )}</For>
               }>
-                <div class="pr-sub">
-                  <div class="pr-sub-role">
-                    {subagentTypes().get(`${activeId()}:${(b as { agentRef: string }).agentRef}`) ?? (b as { agentRef: string }).agentRef}
-                  </div>
-                  <div class="pr-sub-rows">
-                    <For each={b.lines}>{(l) => (
-                      <div class={l.role === "user" ? "pr-sub-line pr-sub-line-prompt" : "pr-sub-line"}>{l.text}</div>
-                    )}</For>
-                  </div>
-                </div>
+                {(() => {
+                  const [open, setOpen] = createSignal(false);
+                  const ref = (b as { agentRef: string }).agentRef;
+                  return (
+                    <div class={`pr-sub${open() ? " is-open" : ""}`}>
+                      <button class="pr-sub-role" type="button" onClick={() => setOpen((v) => !v)}>
+                        <span class="pr-sub-name">{subagentTypes().get(`${activeId()}:${ref}`) ?? ref}</span>
+                        <span class="pr-sub-meta">{b.lines.length} {b.lines.length === 1 ? "step" : "steps"}</span>
+                      </button>
+                      <Show when={open()}>
+                        <div class="pr-sub-rows">
+                          <For each={b.lines}>{(l) => (
+                            <div class={l.role === "user" ? "pr-sub-line pr-sub-line-prompt" : "pr-sub-line"}>{l.text}</div>
+                          )}</For>
+                        </div>
+                      </Show>
+                    </div>
+                  );
+                })()}
               </Show>
             )}</For>
           </Show>
