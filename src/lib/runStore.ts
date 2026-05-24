@@ -33,12 +33,22 @@ export function cwdLabel(cwd?: string): string {
   return base || LOCAL_PROJECT;
 }
 
+/** Parent-repo label for a git-worktree cwd (.../<repo>/.claude/worktrees/<name>).
+ *  Returns the segment just before `.claude` so worktrees nest under their repo;
+ *  undefined when the cwd isn't inside a worktree. */
+export function repoLabel(cwd?: string): string | undefined {
+  if (!cwd) return undefined;
+  const parts = cwd.replace(/[/\\]+$/, "").split(/[/\\]/).filter(Boolean);
+  const i = parts.findIndex((p, idx) => p === ".claude" && parts[idx + 1] === "worktrees");
+  return i > 0 ? parts[i - 1] : undefined;
+}
+
 /** Translate a locally-launched run's ClaudeEvent into a WatchEvent so the app's
  *  own run flows through the same sessionStore pipeline as observed sessions —
  *  appearing as a "local" session in the Console rail and the Cockpit constellation. */
-function toWatch(ev: ClaudeEvent, project: string): WatchEvent | null {
+function toWatch(ev: ClaudeEvent, project: string, repo?: string): WatchEvent | null {
   const wrap = (agentRef: string, event: SessionEvent): WatchEvent =>
-    ({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef, event } });
+    ({ type: "session", data: { sessionId: LOCAL_SID, project, repo, agentRef, event } });
   switch (ev.type) {
     case "assistantText":
       return wrap(ev.data.parentToolUseId ?? "master", { kind: "turn", data: { role: "assistant", text: ev.data.text } });
@@ -56,8 +66,9 @@ function toWatch(ev: ClaudeEvent, project: string): WatchEvent | null {
 export async function startRun(prompt: string, opts?: { cwd?: string; model?: string }): Promise<void> {
   if (running() || !prompt.trim()) return;
   const project = cwdLabel(opts?.cwd);
+  const repo = repoLabel(opts?.cwd);
   // Echo the prompt as a user turn in the local session.
-  applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef: "master", event: { kind: "turn", data: { role: "user", text: prompt } } } });
+  applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, repo, agentRef: "master", event: { kind: "turn", data: { role: "user", text: prompt } } } });
   setRunning(true);
   // Continue the prior local run when one exists, so follow-ups keep context;
   // no id (first prompt or after NEW) starts a fresh session — pass opts untouched
@@ -66,17 +77,17 @@ export async function startRun(prompt: string, opts?: { cwd?: string; model?: st
   const runOpts = id ? { ...opts, resume: id } : opts;
   try {
     await runClaude(prompt, (ev: ClaudeEvent) => {
-      const w = toWatch(ev, project);
+      const w = toWatch(ev, project, repo);
       if (w) applyWatch(w);
       else if (ev.type === "systemInit") setLocalSessionId(ev.data.sessionId);
       else if (ev.type === "result" && ev.data.isError) {
-        applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: ev.data.result } } } });
+        applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, repo, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: ev.data.result } } } });
       } else if (ev.type === "runError") {
-        applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: ev.data.message } } } });
+        applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, repo, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: ev.data.message } } } });
       } else if (ev.type === "runComplete") setRunning(false);
     }, runOpts);
   } catch (e) {
-    applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: String(e) } } } });
+    applyWatch({ type: "session", data: { sessionId: LOCAL_SID, project, repo, agentRef: "master", event: { kind: "turn", data: { role: "assistant", text: String(e) } } } });
     setRunning(false);
   }
 }

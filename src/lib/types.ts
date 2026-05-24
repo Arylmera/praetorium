@@ -52,7 +52,7 @@ export type SessionEvent =
   | { kind: "toolDone"; data: { toolUseId: string; isError: boolean } };
 
 export type WatchEvent =
-  | { type: "session"; data: { sessionId: string; project: string; agentRef: string; event: SessionEvent } }
+  | { type: "session"; data: { sessionId: string; project: string; repo?: string | null; agentRef: string; event: SessionEvent } }
   | { type: "state"; data: { sessionId: string; state: string } };
 
 export interface LiveSessionMeta { id: string; project: string; title: string; lastActivityMs: number; state: string }

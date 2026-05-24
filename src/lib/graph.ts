@@ -109,6 +109,14 @@ export function reduceWatch(prev: GraphState, e: WatchEvent): GraphState {
   if (!s.nodes.has(projectId)) {
     s.nodes.set(projectId, { id: projectId, kind: "project", label: e.data.project, status: "running" });
   }
+  // Worktree sessions nest one level deeper: the parent repo node owns the
+  // worktree (project) node, which owns the master. All worktrees of a repo
+  // thus collapse under a single repo node instead of floating as siblings.
+  if (e.data.repo && e.data.repo !== e.data.project) {
+    const repoId = `proj:${e.data.repo}`;
+    if (!s.nodes.has(repoId)) s.nodes.set(repoId, { id: repoId, kind: "project", label: e.data.repo, status: "running" });
+    addEdge(s, repoId, projectId);
+  }
   addEdge(s, projectId, masterId);
   const ownerId = agentRef === "master" ? masterId : `${sessionId}:${agentRef}`;
   switch (event.kind) {

@@ -42,27 +42,36 @@ const fullLabel = (n: { kind: string; session?: string; label: string; weight?: 
  *  local run is always shown. Archived (older) sessions are pruned from the graph. */
 const visibleSession = (sid?: string) => !sid || sid === "local" || metas().has(sid);
 
-/** Drop nodes belonging to archived sessions, then any folder/project left with no edges. */
+/** Keep only what a live session anchors. Visible master/agent nodes are roots;
+ *  a folder survives when a kept session points at it (shared folders stay shared),
+ *  and a project survives when it still owns a kept child — so repo→worktree chains
+ *  collapse cleanly and empty repo/worktree hubs (archived-only) are dropped. */
 function pruneArchived(g: GraphState): GraphState {
-  const kept = new Map<string, GraphNode>();
-  for (const n of g.nodes.values()) {
-    if (n.kind === "folder" || n.kind === "project") kept.set(n.id, n);
-    else if (visibleSession(n.session)) kept.set(n.id, n);
-  }
-  const edges = new Map<string, { id: string; source: string; target: string }>();
-  const deg = new Map<string, number>();
+  const outT = new Map<string, string[]>(); // source -> targets
+  const inS = new Map<string, string[]>();   // target -> sources
   for (const e of g.edges.values()) {
-    if (kept.has(e.source) && kept.has(e.target)) {
-      edges.set(e.id, e);
-      deg.set(e.source, (deg.get(e.source) ?? 0) + 1);
-      deg.set(e.target, (deg.get(e.target) ?? 0) + 1);
+    if (!g.nodes.has(e.source) || !g.nodes.has(e.target)) continue;
+    (outT.get(e.source) ?? outT.set(e.source, []).get(e.source)!).push(e.target);
+    (inS.get(e.target) ?? inS.set(e.target, []).get(e.target)!).push(e.source);
+  }
+  const keep = new Set<string>();
+  for (const n of g.nodes.values())
+    if ((n.kind === "master" || n.kind === "agent") && visibleSession(n.session)) keep.add(n.id);
+  // Fixpoint: folders need a kept source; projects need a kept target (repo→worktree→master).
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const n of g.nodes.values()) {
+      if (keep.has(n.id)) continue;
+      const ok = n.kind === "folder" ? (inS.get(n.id) ?? []).some((s) => keep.has(s))
+        : n.kind === "project" ? (outT.get(n.id) ?? []).some((t) => keep.has(t))
+        : false;
+      if (ok) { keep.add(n.id); changed = true; }
     }
   }
   const nodes = new Map<string, GraphNode>();
-  for (const n of kept.values()) {
-    if ((n.kind === "folder" || n.kind === "project") && !deg.get(n.id)) continue; // orphaned
-    nodes.set(n.id, n);
-  }
+  for (const [id, n] of g.nodes) if (keep.has(id)) nodes.set(id, n);
+  const edges = new Map<string, { id: string; source: string; target: string }>();
+  for (const [id, e] of g.edges) if (nodes.has(e.source) && nodes.has(e.target)) edges.set(id, e);
   return { nodes, edges, activity: g.activity };
 }
 

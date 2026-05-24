@@ -19,7 +19,7 @@ pub struct SessionMeta {
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "type", content = "data")]
 pub enum WatchEvent {
-    Session { session_id: String, project: String, agent_ref: String, event: SessionEvent },
+    Session { session_id: String, project: String, repo: Option<String>, agent_ref: String, event: SessionEvent },
     State { session_id: String, state: String },
 }
 
@@ -50,6 +50,14 @@ fn project_for(path: &Path) -> String {
 }
 fn basename(p: &str) -> String {
     p.rsplit(|c| c == '\\' || c == '/').next().filter(|s| !s.is_empty()).unwrap_or(p).to_string()
+}
+/// Parent-repo name for a git-worktree cwd (`<repo>/.claude/worktrees/<name>`):
+/// the path segment just before `.claude`. None when the cwd isn't in a worktree.
+fn repo_for_cwd(cwd: &str) -> Option<String> {
+    let comps: Vec<&str> = cwd.split(|c| c == '\\' || c == '/').filter(|s| !s.is_empty()).collect();
+    comps.iter().position(|c| *c == ".claude")
+        .filter(|&i| i >= 1 && comps.get(i + 1) == Some(&"worktrees"))
+        .map(|i| comps[i - 1].to_string())
 }
 fn line_cwd(line: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
@@ -115,7 +123,9 @@ fn pump(path: &Path, offsets: &Mutex<HashMap<PathBuf, usize>>, ch: &Arc<Channel<
     let Some(session_id) = session_id_for(path) else { return; };
     let agent_ref = agent_ref_for(path);
     let content = match std::fs::read_to_string(path) { Ok(c) => c, Err(_) => return };
-    let project = content.lines().find_map(line_cwd).map(|c| basename(&c)).unwrap_or_else(|| project_for(path));
+    let cwd = content.lines().find_map(line_cwd);
+    let project = cwd.as_deref().map(basename).unwrap_or_else(|| project_for(path));
+    let repo = cwd.as_deref().and_then(repo_for_cwd);
     let mut map = offsets.lock().unwrap();
     let off = *map.get(path).unwrap_or(&0);
     let start = if off > content.len() { 0 } else { off };
@@ -124,7 +134,7 @@ fn pump(path: &Path, offsets: &Mutex<HashMap<PathBuf, usize>>, ch: &Arc<Channel<
     drop(map);
     for line in lines {
         for event in parse_transcript_line(&line) {
-            let _ = ch.send(WatchEvent::Session { session_id: session_id.clone(), project: project.clone(), agent_ref: agent_ref.clone(), event });
+            let _ = ch.send(WatchEvent::Session { session_id: session_id.clone(), project: project.clone(), repo: repo.clone(), agent_ref: agent_ref.clone(), event });
         }
     }
 }
@@ -211,5 +221,13 @@ mod tests {
         assert!(matches!(seed_for(100, 0), Seed::Replay));
         assert!(matches!(seed_for(100, LIVE_WINDOW_MS), Seed::Replay));
         assert!(matches!(seed_for(100, LIVE_WINDOW_MS + 1), Seed::SkipTo(100)));
+    }
+
+    #[test]
+    fn repo_for_cwd_detects_worktree_parent() {
+        assert_eq!(repo_for_cwd("C:\\Users\\u\\git\\praetorium\\.claude\\worktrees\\gallant-tesla-f7dbcd"), Some("praetorium".into()));
+        assert_eq!(repo_for_cwd("/home/u/git/praetorium/.claude/worktrees/foo"), Some("praetorium".into()));
+        assert_eq!(repo_for_cwd("/home/u/git/praetorium"), None); // not a worktree
+        assert_eq!(repo_for_cwd("/home/u/.claude/projects/x"), None); // .claude but not worktrees
     }
 }
