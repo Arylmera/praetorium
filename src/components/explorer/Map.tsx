@@ -20,13 +20,24 @@ export function MapView() {
   });
   const view = createMemo(() => {
     const g = meta() ? metaToGraph(meta()) : emptyGraph();
-    const pos = buildPosMap(layout.layout(g, W, H));
-    return { g, pos };
+    const positioned = layout.layout(g, W, H);
+    const pos = buildPosMap(positioned);
+    // Auto-fit the viewBox to the actual node bounds (+ padding, extra on the
+    // right for labels) so the graph always scales to fit the pane.
+    let vb = `0 0 ${W} ${H}`;
+    if (positioned.length) {
+      const xs = positioned.map((p) => p.x), ys = positioned.map((p) => p.y);
+      const pad = 50, labelPad = 240;
+      const minX = Math.min(...xs) - pad, minY = Math.min(...ys) - pad;
+      const maxX = Math.max(...xs) + labelPad, maxY = Math.max(...ys) + pad;
+      vb = `${minX} ${minY} ${maxX - minX} ${maxY - minY}`;
+    }
+    return { g, pos, vb };
   });
   return (
     <div style={{ height: "100%", overflow: "hidden" }}>
       <Show when={meta()} fallback={<div style={{ padding: "14px", color: "var(--fg)" }}>No Cartographicum meta.json found.</div>}>
-        <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
+        <svg width="100%" height="100%" viewBox={view().vb} preserveAspectRatio="xMidYMid meet">
           <For each={[...view().g.edges.values()]}>{(e) => {
             const a = view().pos.get(e.source); const b = view().pos.get(e.target);
             return a && b ? <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--border)" stroke-width="1.5" /> : null;
