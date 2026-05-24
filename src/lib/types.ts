@@ -39,6 +39,9 @@ export interface GraphState {
 }
 
 export interface VaultFile { rel: string; name: string; dir: string }
+// Mirror of Rust vault::NoteLinks (serde camelCase): a note's resolved outgoing
+// wikilinks + count of dangling targets.
+export interface NoteLinks { rel: string; links: string[]; unresolved: number }
 export interface SessionMeta { id: string; mtimeMs: number; title: string; sizeBytes: number }
 export interface Turn { role: "user" | "assistant"; text: string; ts: string }
 
