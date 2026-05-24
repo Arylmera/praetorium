@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, Show, untrack } from "solid-js";
 import { graph, metas, sessions } from "../lib/sessionStore";
 import { RadialForceLayout, HierarchicalLayout, type LayoutStrategy } from "../lib/layout";
-import { layoutName } from "../lib/settings";
+import { layoutName, setLayout } from "../lib/settings";
 import type { GraphState, GraphNode } from "../lib/types";
 
 const W = 1400, H = 980;
@@ -107,7 +107,7 @@ export function Cockpit() {
   // Recompute the (expensive) layout only when topology or the chosen layout changes.
   const positions = createMemo(() => {
     topoKey();
-    const layout = strategies[layoutName()] ?? strategies.radial;
+    const layout = strategies[layoutName()] ?? strategies.hierarchical;
     const g = untrack(displayGraph);
     return new Map(g.nodes.size ? layout.layout(g, W, H).map((p) => [p.id, p] as const) : []);
   });
@@ -154,6 +154,10 @@ export function Cockpit() {
         <h3>LIVE AGENT GRAPH</h3>
         <p>Each <b>project</b> spawns <b>sessions</b> (one per master) which dispatch <b>subagents</b> linked to the <b>folders</b> they touch. Folders shared by multiple sessions stay shared. Pulses = live file reads.</p>
         <div class="pr-info-meta">scroll = zoom · drag = pan · <a onClick={reset}>reset</a></div>
+        <div class="pr-seg">
+          <button class={layoutName() === "radial" ? "is-active" : ""} onClick={() => setLayout("radial")}>radial</button>
+          <button class={layoutName() === "hierarchical" ? "is-active" : ""} onClick={() => setLayout("hierarchical")}>hierarchical</button>
+        </div>
       </div>
       <svg ref={svgEl} width="100%" height="100%" viewBox={viewBox()} preserveAspectRatio="xMidYMid meet"
         style={{ cursor: "grab", "touch-action": "none" }}
