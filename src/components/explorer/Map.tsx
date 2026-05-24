@@ -5,9 +5,9 @@ import { parseFolderGraph } from "../../lib/folderGraph";
 import { RadialForceLayout } from "../../lib/layout";
 import type { PositionedNode } from "../../lib/layout";
 import { emptyGraph } from "../../lib/graph";
-import type { GraphState } from "../../lib/types";
+import { vaultPath } from "../../lib/vaultStore";
+import type { GraphState, GraphNode, GraphEdge, NoteLinks } from "../../lib/types";
 
-const VAULT = "C:\\Users\\guill\\Documents\\git\\Terra";
 const W = 1200, H = 860;
 const layout = new RadialForceLayout();
 
@@ -15,12 +15,31 @@ const posMap = (nodes: PositionedNode[]) => new Map(nodes.map((p) => [p.id, p]))
 const communityColor = (c?: number) => (c == null ? "var(--accent)" : `hsl(${(c * 57) % 360},65%,62%)`);
 const folderColor = (f?: string) => (!f ? "var(--accent)" : `hsl(${(Array.from(f).reduce((a, c) => a + c.charCodeAt(0), 0) * 47) % 360},65%,62%)`);
 
+const stemOf = (rel: string) => (rel.split("/").pop() ?? rel).replace(/\.md$/i, "");
+
+/** Build a GraphState from the live wikilink adjacency: a node per note, an edge per resolved link. Pure. */
+function linksToGraph(notes: NoteLinks[]): GraphState {
+  const nodes = new Map<string, GraphNode>(), edges = new Map<string, GraphEdge>();
+  const ensure = (rel: string) => {
+    if (!nodes.has(rel)) nodes.set(rel, { id: rel, kind: "folder", label: stemOf(rel), status: "complete" });
+  };
+  for (const n of notes) {
+    ensure(n.rel);
+    for (const t of n.links) {
+      ensure(t);
+      const id = `${n.rel}->${t}`;
+      if (!edges.has(id)) edges.set(id, { id, source: n.rel, target: t });
+    }
+  }
+  return { nodes, edges, activity: [] };
+}
+
 /** Merge every folder's file-level (or symbol) graph into one, tagging each node with its folder. */
 async function loadAll(folders: string[], showSymbols: boolean): Promise<GraphState> {
   const nodes = new Map(), edges = new Map();
   await Promise.all(folders.map(async (folder) => {
     try {
-      const raw = await invoke<string>("read_folder_graph", { folderPath: `${VAULT}\\${folder}` });
+      const raw = await invoke<string>("read_folder_graph", { folderPath: `${vaultPath()}\\${folder}` });
       const g = parseFolderGraph(raw, showSymbols);
       for (const n of g.nodes.values()) nodes.set(n.id, { ...n, session: folder });
       for (const e of g.edges.values()) edges.set(e.id, e);
@@ -30,13 +49,13 @@ async function loadAll(folders: string[], showSymbols: boolean): Promise<GraphSt
 }
 
 export function MapView() {
-  const [meta] = createResource(async () => {
-    try { return JSON.parse(await invoke<string>("read_cartographicum", { vaultPath: VAULT })); }
+  const [meta] = createResource(vaultPath, async (vp) => {
+    try { return JSON.parse(await invoke<string>("read_cartographicum", { vaultPath: vp })); }
     catch { return null; }
   });
   const folderNames = () => (meta()?.folders ?? []).map((f: any) => f.folder as string);
 
-  const [view, setView] = createSignal<"full" | "rollup">("full"); // default: show everything
+  const [view, setView] = createSignal<"full" | "rollup" | "links">("full"); // default: show everything
   const [drill, setDrill] = createSignal<{ path: string; name: string } | null>(null);
   const [showSymbols, setShowSymbols] = createSignal(false);
 
@@ -55,7 +74,16 @@ export function MapView() {
     catch { return emptyGraph(); }
   });
 
+  // Live wikilink adjacency — works on any vault, with or without _Cartographicum.
+  const linksKey = createMemo(() => (view() === "links" ? vaultPath() : null));
+  const [linkNotes] = createResource(linksKey, async (vp) => {
+    try { return await invoke<NoteLinks[]>("vault_links", { vaultPath: vp }); }
+    catch { return [] as NoteLinks[]; }
+  });
+  const linksGraph = createMemo(() => linksToGraph(linkNotes() ?? []));
+
   const activeGraph = createMemo<GraphState>(() => {
+    if (view() === "links") return linksGraph();
     if (view() === "full") return fullData() ?? emptyGraph();
     if (drill()) return drillData() ?? emptyGraph();
     return meta() ? metaToGraph(meta()) : emptyGraph();
@@ -81,18 +109,24 @@ export function MapView() {
   let svgEl: SVGSVGElement | undefined;
   function reset() { setZoom(1); setPan({ x: 0, y: 0 }); }
 
+  const isLinks = () => view() === "links";
   const isDrill = () => view() === "rollup" && !!drill();
   const isOverview = () => view() === "rollup" && !drill();
   const strokeFor = (n: any) => view() === "full" ? folderColor(n.session) : isDrill() ? communityColor(n.community) : "var(--accent)";
   const subFor = (n: any) => {
+    if (isLinks()) return n.id ?? "";
     if (view() === "full") return `${n.session ?? ""}${n.kind === "folder" ? `\n${n.id}` : ""}`;
     if (isDrill()) return n.kind === "folder" ? n.id : "";
-    return n.kind === "folder" ? `${VAULT}\\${n.label}` : n.id?.startsWith?.("hub:") ? n.id.split(":").slice(2).join(":") : "";
+    return n.kind === "folder" ? `${vaultPath()}\\${n.label}` : n.id?.startsWith?.("hub:") ? n.id.split(":").slice(2).join(":") : "";
   };
   function nodeClick(n: any) {
     if (moved) return; // it was a drag, not a click
-    if (isOverview() && n.kind === "folder") { setDrill({ path: `${VAULT}\\${n.label}`, name: n.label }); reset(); }
+    if (isOverview() && n.kind === "folder") { setDrill({ path: `${vaultPath()}\\${n.label}`, name: n.label }); reset(); }
   }
+
+  // FULL / FOLDERS need a _Cartographicum; LINKS is computed live. Show the
+  // empty-state message only when a meta-backed mode has no meta.
+  const noGraph = () => !isLinks() && !meta();
 
   const viewBox = createMemo(() => {
     const b = base();
@@ -115,31 +149,37 @@ export function MapView() {
   }
   function onUp() { down = false; }
 
-  const loading = () => (view() === "full" ? fullData.loading : drillData.loading);
+  const loading = () => (isLinks() ? linkNotes.loading : view() === "full" ? fullData.loading : drillData.loading);
 
   return (
     <div class="pr-map-wrap">
-      <Show when={meta()} fallback={<div style={{ padding: "14px", color: "var(--gull)" }}>No Cartographicum meta.json found.</div>}>
-        <div class="pr-info-card pr-map-info">
-          <h3>CARTOGRAPHICUM</h3>
-          <div class="pr-map-toggle">
-            <button class={view() === "full" ? "is-active" : ""} onClick={() => { setView("full"); reset(); }}>FULL VAULT</button>
-            <button class={view() === "rollup" ? "is-active" : ""} onClick={() => { setView("rollup"); setDrill(null); reset(); }}>FOLDERS</button>
-          </div>
-          <Show when={view() === "full"}>
-            <p>Every folder's files merged into one graph, coloured by <b>folder</b>; links are cross-file references.</p>
-          </Show>
-          <Show when={isOverview()}>
-            <p>Each <b>folder</b> sized by note count, linked to its top <b>hub</b>. Click a folder to drill in.</p>
-          </Show>
-          <Show when={isDrill()}>
-            <p><b>{drill()!.name}</b> — files coloured by <b>community</b>. <a style={{ cursor: "pointer", "text-decoration": "underline", color: "var(--accent)" }} onClick={() => { setDrill(null); reset(); }}>back</a></p>
-          </Show>
+      <div class="pr-info-card pr-map-info">
+        <h3>CARTOGRAPHICUM</h3>
+        <div class="pr-map-toggle">
+          <button class={view() === "full" ? "is-active" : ""} onClick={() => { setView("full"); reset(); }}>FULL VAULT</button>
+          <button class={view() === "rollup" ? "is-active" : ""} onClick={() => { setView("rollup"); setDrill(null); reset(); }}>FOLDERS</button>
+          <button class={view() === "links" ? "is-active" : ""} onClick={() => { setView("links"); setDrill(null); reset(); }}>LINKS</button>
+        </div>
+        <Show when={isLinks()}>
+          <p>Notes linked by <b><code>[[wikilinks]]</code></b>, parsed live — works on any vault, with or without a Cartographicum.</p>
+        </Show>
+        <Show when={view() === "full"}>
+          <p>Every folder's files merged into one graph, coloured by <b>folder</b>; links are cross-file references.</p>
+        </Show>
+        <Show when={isOverview()}>
+          <p>Each <b>folder</b> sized by note count, linked to its top <b>hub</b>. Click a folder to drill in.</p>
+        </Show>
+        <Show when={isDrill()}>
+          <p><b>{drill()!.name}</b> — files coloured by <b>community</b>. <a style={{ cursor: "pointer", "text-decoration": "underline", color: "var(--accent)" }} onClick={() => { setDrill(null); reset(); }}>back</a></p>
+        </Show>
+        <Show when={!isLinks()}>
           <label class="pr-check">
             <input type="checkbox" checked={showSymbols()} onChange={(e) => { setShowSymbols(e.currentTarget.checked); reset(); }} /> show symbols <span style={{ color: "var(--gull-2)" }}>· heavier</span>
           </label>
-          <div class="pr-info-meta" style={{ "margin-top": "8px" }}>scroll = zoom · drag = pan · <a onClick={reset}>reset</a></div>
-        </div>
+        </Show>
+        <div class="pr-info-meta" style={{ "margin-top": "8px" }}>scroll = zoom · drag = pan · <a onClick={reset}>reset</a></div>
+      </div>
+      <Show when={!noGraph()} fallback={<div style={{ padding: "14px", color: "var(--gull)" }}>No Cartographicum meta.json found.</div>}>
         <svg ref={svgEl} width="100%" height="100%" viewBox={viewBox()} preserveAspectRatio="xMidYMid meet"
           style={{ cursor: "grab", "touch-action": "none" }}
           onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
@@ -158,7 +198,7 @@ export function MapView() {
                   onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY, title: n.label, sub: subFor(n) })}
                   onMouseLeave={() => setHover(null)}>
                   <circle cx={p()!.x} cy={p()!.y} r={r} fill="var(--panel)" stroke={strokeFor(n)} stroke-width="2" />
-                  <Show when={isOverview() || isDrill() ? true : r >= 7}>
+                  <Show when={isOverview() || isDrill() || isLinks() ? true : r >= 7}>
                     <text x={p()!.x + r + 4} y={p()!.y + 4} fill="var(--fg)" style={{ "font-size": view() === "full" ? "10px" : "13px" }}>{n.label}</text>
                   </Show>
                 </g>
@@ -166,15 +206,15 @@ export function MapView() {
             );
           }}</For>
         </svg>
-        <Show when={loading()}>
-          <div style={{ position: "absolute", bottom: "12px", left: "12px", color: "var(--gull-2)", "font-size": "11px", "font-family": "var(--font-mono)" }}>building graph…</div>
-        </Show>
-        <Show when={hover()}>
-          <div class="pr-tooltip" style={{ left: `${hover()!.x + 14}px`, top: `${hover()!.y + 14}px` }}>
-            {hover()!.title}
-            <Show when={hover()!.sub}><span class="sub">{hover()!.sub}</span></Show>
-          </div>
-        </Show>
+      </Show>
+      <Show when={loading()}>
+        <div style={{ position: "absolute", bottom: "12px", left: "12px", color: "var(--gull-2)", "font-size": "11px", "font-family": "var(--font-mono)" }}>building graph…</div>
+      </Show>
+      <Show when={hover()}>
+        <div class="pr-tooltip" style={{ left: `${hover()!.x + 14}px`, top: `${hover()!.y + 14}px` }}>
+          {hover()!.title}
+          <Show when={hover()!.sub}><span class="sub">{hover()!.sub}</span></Show>
+        </div>
       </Show>
     </div>
   );

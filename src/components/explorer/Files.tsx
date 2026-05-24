@@ -1,10 +1,10 @@
-import { createResource, createSignal, createMemo, For, Show } from "solid-js";
+import { createResource, createSignal, createMemo, createEffect, For, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { marked } from "marked";
 import { resolveWikilinks } from "../../lib/wikilinks";
-import type { VaultFile } from "../../lib/types";
-
-const VAULT = "C:\\Users\\guill\\Documents\\git\\Terra";
+import { buildLinkMaps } from "../../lib/vaultLinks";
+import { vaultPath } from "../../lib/vaultStore";
+import type { VaultFile, NoteLinks } from "../../lib/types";
 
 const folderOf = (rel: string) => {
   const i = rel.replace(/\\/g, "/").lastIndexOf("/");
@@ -12,15 +12,26 @@ const folderOf = (rel: string) => {
 };
 
 export function Files() {
-  const [files] = createResource(async () => {
-    try { return await invoke<VaultFile[]>("vault_index", { vaultPath: VAULT }); }
+  const [files] = createResource(vaultPath, async (vp) => {
+    try { return await invoke<VaultFile[]>("vault_index", { vaultPath: vp }); }
     catch { return [] as VaultFile[]; }
   });
-  const index = () => new Map((files() ?? []).map((f) => [f.name.toLowerCase(), f.rel]));
+  const [links] = createResource(vaultPath, async (vp) => {
+    try { return await invoke<NoteLinks[]>("vault_links", { vaultPath: vp }); }
+    catch { return [] as NoteLinks[]; }
+  });
   const [html, setHtml] = createSignal("");
   const [err, setErr] = createSignal("");
   const [activeRel, setActiveRel] = createSignal("");
   const [q, setQ] = createSignal("");
+
+  const index = () => new Map((files() ?? []).map((f) => [f.name.toLowerCase(), f.rel]));
+  const nameByRel = () => new Map((files() ?? []).map((f) => [f.rel, f.name]));
+  const backward = createMemo(() => buildLinkMaps(links() ?? []).backward);
+  const backlinks = createMemo(() => backward().get(activeRel()) ?? []);
+
+  // Vault changed: drop the open note / selection so we don't show a stale doc.
+  createEffect(() => { vaultPath(); setActiveRel(""); setHtml(""); setErr(""); });
 
   // Group files by top-level folder, honouring the search filter.
   const grouped = createMemo(() => {
@@ -37,7 +48,7 @@ export function Files() {
   async function open(rel: string) {
     setErr(""); setActiveRel(rel);
     try {
-      const md = await invoke<string>("read_vault_file", { path: `${VAULT}\\${rel.replace(/\//g, "\\")}` });
+      const md = await invoke<string>("read_vault_file", { path: `${vaultPath()}\\${rel.replace(/\//g, "\\")}` });
       setHtml(resolveWikilinks(await marked.parse(md), index()));
     } catch (e) { setErr(String(e)); }
   }
@@ -70,6 +81,18 @@ export function Files() {
         <Show when={!err()} fallback={<pre style={{ color: "var(--bad)" }}>{err()}</pre>}>
           <Show when={html()} fallback={<p class="muted">Select a note to read it.</p>}>
             <div innerHTML={html()} />
+            <Show when={activeRel()}>
+              <section class="pr-backlinks">
+                <div class="pr-backlinks-head">Linked references</div>
+                <Show when={backlinks().length} fallback={<div class="pr-backlinks-empty">No linked references.</div>}>
+                  <div class="pr-backlinks-list">
+                    <For each={backlinks()}>{(rel) => (
+                      <span class="pr-backlink" onClick={() => open(rel)} title={rel}>{nameByRel().get(rel) ?? rel}</span>
+                    )}</For>
+                  </div>
+                </Show>
+              </section>
+            </Show>
           </Show>
         </Show>
       </article>

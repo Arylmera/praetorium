@@ -90,8 +90,9 @@ export const THEMED_COPY: Partial<Record<Theme, ThemedCopy>> = {
 };
 
 const KEY = "praetorium.theme";
+const hasStorage = typeof localStorage !== "undefined";
 function initial(): Theme {
-  const stored = localStorage.getItem(KEY);
+  const stored = hasStorage ? localStorage.getItem(KEY) : null;
   return THEMES.includes(stored as Theme) ? (stored as Theme) : "forge";
 }
 
@@ -100,7 +101,7 @@ export { theme };
 export const getTheme = theme;
 
 export function setTheme(t: Theme): void {
-  localStorage.setItem(KEY, t);
+  if (hasStorage) localStorage.setItem(KEY, t);
   setThemeSignal(t);
 }
 

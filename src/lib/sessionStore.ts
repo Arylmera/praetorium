@@ -1,5 +1,7 @@
 import { createSignal } from "solid-js";
 import { reduceWatch, emptyGraph } from "./graph";
+import { reduceInsights, emptyInsights } from "./insightsStore";
+import type { InsightsState } from "./insightsStore";
 import type { WatchEvent, GraphState, LiveSessionMeta } from "./types";
 import { listLiveSessions } from "./sessions";
 
@@ -7,12 +9,13 @@ export type TranscriptLine = { agentRef: string; role: string; text: string };
 
 const [sessions, setSessions] = createSignal<Map<string, { project?: string; lines: TranscriptLine[] }>>(new Map());
 const [graph, setGraph] = createSignal<GraphState>(emptyGraph());
+const [insights, setInsights] = createSignal<InsightsState>(emptyInsights());
 const [activeId, setActiveId] = createSignal<string | null>(null);
 const [metas, setMetas] = createSignal<Map<string, LiveSessionMeta>>(new Map());
 // `${sessionId}:${toolUseId}` -> subagent type, so the Console can name nested agents.
 const [subagentTypes, setSubagentTypes] = createSignal<Map<string, string>>(new Map());
 
-export { sessions, graph, activeId, setActiveId, metas, subagentTypes };
+export { sessions, graph, insights, activeId, setActiveId, metas, subagentTypes };
 
 export async function refreshMetas(): Promise<void> {
   const list = await listLiveSessions();
@@ -36,5 +39,7 @@ export function applyWatch(e: WatchEvent) {
     setSubagentTypes((prev) => new Map(prev).set(`${sessionId}:${event.data.toolUseId}`, event.data.subagentType || "agent"));
   }
   setGraph((g) => reduceWatch(g, e));
+  // Stamp arrival time here (live-only scope): the insights store has no Rust timestamps.
+  setInsights((i) => reduceInsights(i, e, Date.now()));
   if (activeId() === null) setActiveId(sessionId);
 }

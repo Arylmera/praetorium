@@ -12,7 +12,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![process::run_claude, vault::read_vault_file, vault::vault_index, vault::read_cartographicum, vault::read_folder_graph, sessions::list_sessions, sessions::read_session, session_watch::list_live_sessions, session_watch::watch_sessions])
+        .invoke_handler(tauri::generate_handler![process::run_claude, vault::read_vault_file, vault::vault_index, vault::vault_links, vault::read_cartographicum, vault::read_folder_graph, sessions::list_sessions, sessions::read_session, session_watch::list_live_sessions, session_watch::watch_sessions])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

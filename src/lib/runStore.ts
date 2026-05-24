@@ -32,7 +32,7 @@ function toWatch(ev: ClaudeEvent, project: string): WatchEvent | null {
     case "toolCall":
       return wrap(ev.data.parentToolUseId ?? "master", { kind: "toolActivity", data: { toolUseId: ev.data.toolUseId, name: ev.data.name, filePath: ev.data.filePath } });
     case "toolResult":
-      return wrap(ev.data.parentToolUseId ?? "master", { kind: "agentDone", data: { toolUseId: ev.data.toolUseId, isError: ev.data.isError } });
+      return wrap(ev.data.parentToolUseId ?? "master", { kind: "toolDone", data: { toolUseId: ev.data.toolUseId, isError: ev.data.isError } });
     default:
       return null;
   }
