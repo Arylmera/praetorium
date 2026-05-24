@@ -90,6 +90,7 @@ export function MapView() {
     return n.kind === "folder" ? `${VAULT}\\${n.label}` : n.id?.startsWith?.("hub:") ? n.id.split(":").slice(2).join(":") : "";
   };
   function nodeClick(n: any) {
+    if (moved) return; // it was a drag, not a click
     if (isOverview() && n.kind === "folder") { setDrill({ path: `${VAULT}\\${n.label}`, name: n.label }); reset(); }
   }
 
