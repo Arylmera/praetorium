@@ -4,7 +4,13 @@ import { createSignal } from "solid-js";
 export const THEMES = [
   "dark", "dim", "forge", "forest", "dusk", "ocean", "matrix", "rose",
   "bb-dark", "cyber-dark", "paper", "linen", "mint", "lilac", "bb-light", "cyber-light",
+  "terminal", "cockpit", "grimdark",
 ] as const;
+
+/* The three "special" themes go beyond a flat palette swap: they also override
+   display fonts and drive a full-bleed ambient canvas (see AmbientCanvas). */
+export const SPECIAL_THEMES: readonly Theme[] = ["terminal", "cockpit", "grimdark"];
+export const isSpecialTheme = (t: Theme): boolean => SPECIAL_THEMES.includes(t);
 export type Theme = (typeof THEMES)[number];
 
 /* Mini palette swatches [bg, panel, accent] for the theme picker chips. */
@@ -25,11 +31,14 @@ export const THEME_SWATCHES: Record<Theme, [string, string, string]> = {
   lilac: ["#F2EEF8", "#FAF7FF", "#7449F0"],
   "bb-light": ["#F4EFC8", "#FAF7DD", "#1F5C36"],
   "cyber-light": ["#F2EAE5", "#FBF5F2", "#BE2BBE"],
+  terminal: ["#020806", "#04140D", "#36FF7A"],
+  cockpit: ["#04080F", "#0A1A2C", "#00D4FF"],
+  grimdark: ["#0A0807", "#181311", "#C8A24A"],
 };
 
 /* Display metadata for the Settings theme picker — label + DARK/LIGHT group,
    mirroring the Token Dashboard APPEARANCE panel. */
-export type ThemeGroup = "dark" | "light";
+export type ThemeGroup = "dark" | "light" | "special";
 export interface ThemeInfo { id: Theme; label: string; group: ThemeGroup; swatches: [string, string, string]; }
 
 export const THEME_LIST: ThemeInfo[] = [
@@ -49,6 +58,9 @@ export const THEME_LIST: ThemeInfo[] = [
   { id: "lilac", label: "LILAC", group: "light", swatches: THEME_SWATCHES.lilac },
   { id: "bb-light", label: "BREAKING BAD", group: "light", swatches: THEME_SWATCHES["bb-light"] },
   { id: "cyber-light", label: "CYBERPUNK", group: "light", swatches: THEME_SWATCHES["cyber-light"] },
+  { id: "terminal", label: "TERMINAL", group: "special", swatches: THEME_SWATCHES.terminal },
+  { id: "cockpit", label: "COCKPIT", group: "special", swatches: THEME_SWATCHES.cockpit },
+  { id: "grimdark", label: "GRIMDARK", group: "special", swatches: THEME_SWATCHES.grimdark },
 ];
 
 const KEY = "praetorium.theme";

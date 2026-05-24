@@ -519,3 +519,205 @@ option { background: var(--panel); color: var(--bone); }
 [data-reduce-motion="1"] .cockpit-ring,
 [data-reduce-motion="1"] .pr-run.is-running::before,
 [data-reduce-motion="1"] .pr-statusbar .item.ok::before { animation: none !important; transition: none !important; }
+
+/* ============================================================================
+   11 · SPECIAL THEMES — Terminal / Cockpit / Grimdark
+   Ported from the "special themes" design handoff. Unlike the flat instrument
+   finishes above, these also swap display fonts and drive a full-bleed ambient
+   canvas (see components/AmbientCanvas.tsx). The token contract is preserved,
+   so every pr-* component keeps rendering; these blocks only ADD ornament and
+   remap the var layer. Handoff selectors (.dir-a-root / .a-*) are mapped onto
+   this app's wrapper (.td-root[data-theme]) and pr-* class vocabulary.
+   ============================================================================ */
+
+/* ---- Vendored display fonts (woff2 in themes/fonts/, no CDN) ----
+   Only the primary weights are vendored; other weights fall back gracefully. */
+@font-face {
+  font-family: 'VT323';
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url(fonts/vt323-400-latin.woff2) format('woff2');
+}
+@font-face {
+  font-family: 'Share Tech Mono';
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url(fonts/share-tech-mono-400-latin.woff2) format('woff2');
+}
+@font-face {
+  font-family: 'Orbitron';
+  font-style: normal; font-weight: 500 700; font-display: swap;
+  src: url(fonts/orbitron-600-latin.woff2) format('woff2');
+}
+@font-face {
+  font-family: 'Cinzel';
+  font-style: normal; font-weight: 500 700; font-display: swap;
+  src: url(fonts/cinzel-600-latin.woff2) format('woff2');
+}
+@font-face {
+  font-family: 'Cormorant Garamond';
+  font-style: italic; font-weight: 500 600; font-display: swap;
+  src: url(fonts/cormorant-garamond-600-italic-latin.woff2) format('woff2');
+}
+
+/* ---- Shared ambient-canvas container — sits behind the chrome ---- */
+.a-ambient { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.a-ambient canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* Lift the real chrome above the ambient layer (topbar is already z-index 10). */
+.td-root > main,
+.td-root > .pr-statusbar { position: relative; z-index: 2; }
+
+/* ════════════════════════════ TERMINAL — phosphor CRT ════════════════════════════ */
+.td-root[data-theme="terminal"] {
+  --bg:            #020806;
+  --panel-solid:   #04140d;
+  --panel-2-solid: #062418;
+  --iron-border:   #0a3a26;
+  --iron-border-2: #0f5239;
+  --bone:          #b7ffce;
+  --gull:          #4ddc7d;
+  --gull-2:        #2e8a4f;
+  --accent:        #36ff7a;
+  --accent-2:      #4ddc7d;
+  --good:          #4ddc7d;
+  --pos:           #36ff7a;
+  --bad:           #ff4d4d;
+  --grid-dot:      rgba(54,255,122,0.03);
+  --font-mono:     "VT323", "JetBrains Mono", monospace;
+  --font-prose:    "VT323", "JetBrains Mono", monospace;
+  background: #020806;
+  text-shadow: 0 0 1px rgba(183,255,206,0.45);
+}
+/* VT323 reads small — bump everything onto its pixel grid. */
+.td-root[data-theme="terminal"],
+.td-root[data-theme="terminal"] * { font-family: var(--font-mono); }
+.td-root[data-theme="terminal"] .pr-cs-val      { font-size: 30px; letter-spacing: 0; text-shadow: 0 0 6px rgba(54,255,122,0.55), 0 0 14px rgba(54,255,122,0.25); }
+.td-root[data-theme="terminal"] .pr-prompt       { font-size: 16px; }
+.td-root[data-theme="terminal"] .pr-card-head h2  { font-size: 15px; letter-spacing: 0.16em; }
+.td-root[data-theme="terminal"] .pr-navlink       { font-size: 14px; letter-spacing: 0.16em; }
+.td-root[data-theme="terminal"] .pr-range button  { font-size: 13px; }
+.td-root[data-theme="terminal"] .pr-doc table th  { font-size: 13px; letter-spacing: 0.16em; }
+.td-root[data-theme="terminal"] .pr-doc table td  { font-size: 14px; }
+
+/* CRT vignette + repeating scanlines on the ambient layer */
+.td-root[data-theme="terminal"] .a-ambient::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.6) 100%),
+    radial-gradient(ellipse at 50% 40%, rgba(54,255,122,0.06) 0%, transparent 60%);
+}
+.td-root[data-theme="terminal"] .a-ambient::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(to bottom,
+    rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+    rgba(0,0,0,0.22) 3px, rgba(0,0,0,0.22) 3.5px);
+  mix-blend-mode: multiply;
+  animation: terminal-scanlines 8s linear infinite;
+}
+@keyframes terminal-scanlines { from { background-position: 0 0; } to { background-position: 0 60px; } }
+
+/* ASCII "+" marks on card corners */
+.td-root[data-theme="terminal"] .pr-card { position: relative; }
+.td-root[data-theme="terminal"] .pr-card::before,
+.td-root[data-theme="terminal"] .pr-card::after {
+  content: "+"; position: absolute; top: -1px; z-index: 1;
+  color: var(--accent); font: 14px var(--font-mono);
+  padding: 1px 3px 0 3px; background: var(--bg); line-height: 1;
+}
+.td-root[data-theme="terminal"] .pr-card::before { left: -1px; }
+.td-root[data-theme="terminal"] .pr-card::after  { right: -1px; }
+
+/* ════════════════════════════ COCKPIT — bridge HUD ════════════════════════════ */
+.td-root[data-theme="cockpit"] {
+  --bg:            #04080f;
+  --panel-solid:   rgba(10, 26, 44, 0.82);
+  --panel-2-solid: rgba(14, 36, 60, 0.85);
+  --iron-border:   #0e3a5c;
+  --iron-border-2: #1a5688;
+  --bone:          #d3ebff;
+  --gull:          #6b9cc4;
+  --gull-2:        #466884;
+  --accent:        #00d4ff;
+  --accent-2:      #ffaa00;
+  --good:          #6b9cc4;
+  --pos:           #00d4ff;
+  --warn:          #ffaa00;
+  --bad:           #ff4a6b;
+  --grid-dot:      rgba(0,212,255,0.025);
+  --font-mono:     "Share Tech Mono", "JetBrains Mono", monospace;
+  --font-display:  "Orbitron", "Share Tech Mono", monospace;
+  background: radial-gradient(ellipse at top, #07182b 0%, #04080f 60%, #02060c 100%);
+}
+.td-root[data-theme="cockpit"],
+.td-root[data-theme="cockpit"] * { font-family: var(--font-mono); }
+.td-root[data-theme="cockpit"] .pr-card-head h2,
+.td-root[data-theme="cockpit"] .pr-navlink,
+.td-root[data-theme="cockpit"] .pr-cs-val { font-family: var(--font-display); }
+.td-root[data-theme="cockpit"] .pr-card-head h2 { letter-spacing: 0.22em; }
+.td-root[data-theme="cockpit"] .pr-navlink      { letter-spacing: 0.22em; }
+.td-root[data-theme="cockpit"] .pr-cs-val { text-shadow: 0 0 12px rgba(0,212,255,0.55), 0 0 28px rgba(0,212,255,0.2); }
+
+/* translucent cards over the star field */
+.td-root[data-theme="cockpit"] .pr-card {
+  position: relative;
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  box-shadow: inset 0 0 0 1px rgba(0,212,255,0.05);
+}
+/* calm bottom radial in the ambient layer */
+.td-root[data-theme="cockpit"] .a-ambient::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 120%, rgba(0,40,80,0.35) 0%, transparent 55%);
+}
+
+/* ════════════════════════════ GRIMDARK — gothic-industrial (original; no GW IP) ════════════════════════════ */
+.td-root[data-theme="grimdark"] {
+  --bg:            #0a0807;
+  --panel-solid:   #181311;
+  --panel-2-solid: #221814;
+  --iron-border:   #3a261c;
+  --iron-border-2: #5a3a26;
+  --bone:          #e8d5b0;
+  --gull:          #a08566;
+  --gull-2:        #6e5640;
+  --accent:        #c8a24a;
+  --accent-2:      #b8231a;
+  --good:          #a08566;
+  --pos:           #c8a24a;
+  --bad:           #b8231a;
+  --grid-dot:      rgba(232,213,176,0.022);
+  --font-mono:     "JetBrains Mono", ui-monospace, monospace;
+  --font-display:  "Cinzel", serif;
+  --font-brand:    "Cormorant Garamond", "Cinzel", serif;
+  background: radial-gradient(ellipse at top, #1a0f0a 0%, #0a0807 70%);
+}
+.td-root[data-theme="grimdark"] .pr-card-head h2,
+.td-root[data-theme="grimdark"] .pr-navlink,
+.td-root[data-theme="grimdark"] .pr-cs-val { font-family: var(--font-display); }
+.td-root[data-theme="grimdark"] .pr-card-head h2 { letter-spacing: 0.2em; }
+.td-root[data-theme="grimdark"] .pr-navlink      { letter-spacing: 0.22em; }
+.td-root[data-theme="grimdark"] .pr-cs-val { letter-spacing: 0; font-weight: 500; text-shadow: 0 0 14px rgba(200,162,74,0.35); }
+/* brand prompt: engraved serif path, Cinzel for the prompt + command */
+.td-root[data-theme="grimdark"] .pr-prompt { font-family: var(--font-brand); font-size: 15px; font-style: italic; font-weight: 600; }
+.td-root[data-theme="grimdark"] .pr-prompt-ps1,
+.td-root[data-theme="grimdark"] .pr-prompt-cmd { font-family: var(--font-display); font-style: normal; letter-spacing: 0.1em; }
+
+/* gold-hairline card edge + ✠ sigil at top-left */
+.td-root[data-theme="grimdark"] .pr-card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(58,38,28,0.16), transparent 30%), var(--panel);
+  box-shadow: inset 0 0 0 1px rgba(200,162,74,0.06);
+}
+.td-root[data-theme="grimdark"] .pr-card::before {
+  content: "✠"; position: absolute; top: -1px; left: 10px; z-index: 1;
+  background: var(--bg); color: var(--accent); font: 14px var(--font-display);
+  padding: 0 6px; line-height: 1;
+}
+/* ember glow on the ambient layer */
+.td-root[data-theme="grimdark"] .a-ambient::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse at top, rgba(184,35,26,0.10) 0%, transparent 50%),
+    radial-gradient(ellipse at bottom, rgba(0,0,0,0.6) 0%, transparent 60%);
+}
+
+/* ---- Reduce-motion: kill the CSS-driven special-theme animation ---- */
+[data-reduce-motion="1"] .a-ambient::before { animation: none !important; }

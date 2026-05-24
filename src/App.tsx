@@ -5,6 +5,7 @@ import { Cockpit } from "./components/Cockpit";
 import { Explorer } from "./components/Explorer";
 import { Settings } from "./components/Settings";
 import { WindowControls } from "./components/WindowControls";
+import { AmbientCanvas } from "./components/AmbientCanvas";
 import { ViewSwitcher, type View } from "./components/ViewSwitcher";
 
 const ROUTES: Record<View, () => any> = {
@@ -34,6 +35,9 @@ function App() {
   setInterval(refreshMetas, 4000);
   return (
     <div class="td-root" classList={{ "is-glass": glass() }} data-theme={theme()}>
+      {/* Ambient layer for special themes — sits behind the chrome, idles otherwise */}
+      <AmbientCanvas />
+
       {/* ===== TOPBAR ===== drag region for the frameless window */}
       <header class="pr-topbar" data-tauri-drag-region="">
         <div class="pr-prompt" data-tauri-drag-region="">

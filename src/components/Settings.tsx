@@ -49,6 +49,7 @@ export function Settings() {
             </div>
             <ThemeGrid group="dark" />
             <ThemeGrid group="light" />
+            <ThemeGrid group="special" />
           </div>
 
           <div class="pr-set-section">
