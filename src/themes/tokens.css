@@ -406,8 +406,9 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 /* ============================================================
    6 · COCKPIT / MAP — live graph surfaces
    ============================================================ */
-.pr-cockpit { position: relative; flex: 1; min-height: 0; border: 1px solid var(--iron-border); background: var(--panel); overflow: hidden; }
+.pr-cockpit { position: relative; flex: 1; min-height: 0; border: 1px solid var(--iron-border); background: var(--panel); overflow: hidden; display: flex; flex-direction: column; }
 .pr-cockpit svg, .pr-map-wrap svg { width: 100%; height: 100%; display: block; cursor: grab; }
+.pr-cockpit > svg { flex: 1 1 auto; min-height: 0; height: auto; }
 .pr-info-card { position: absolute; top: 14px; left: 14px; width: 320px; padding: 14px 16px; background: color-mix(in srgb, var(--panel) 96%, transparent); border: 1px solid var(--iron-border); backdrop-filter: blur(8px); }
 .pr-info-card h3 { margin: 0 0 8px; font: var(--t-card-title); text-transform: uppercase; letter-spacing: 0.1em; color: var(--bone); display: inline-flex; align-items: center; gap: 10px; }
 .pr-info-card h3::before { content: ""; display: inline-block; width: 16px; height: 2px; background: var(--accent); flex: 0 0 auto; }
@@ -429,12 +430,76 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 .pr-tooltip { position: fixed; pointer-events: none; z-index: 100; padding: 8px 11px; background: var(--panel); border: 1px solid var(--iron-border-2); box-shadow: var(--shadow-dropdown); font: 500 12px var(--font-mono); color: var(--bone); max-width: 420px; white-space: pre-wrap; }
 .pr-tooltip .sub { font: 400 11px var(--font-mono); color: var(--gull); margin-top: 3px; display: block; }
 
+/* --- liveness: idle / dim / selection states --------------------------- */
+.pr-node-idle { font: 400 9px var(--font-mono); fill: var(--gull-2); }
+.pr-cockpit g.is-idle { opacity: .42; }
+.pr-cockpit g.is-dimmed { opacity: .12; }
+.cockpit-edge.is-dimmed { opacity: .06; }
+.pr-cockpit g.is-selected .cockpit-node { stroke-width: 3; }
+.pr-cockpit g.is-selected .pr-node-label { fill: var(--accent); }
+
+/* --- mini legend (always-visible) + expandable popover ----------------- */
+.pr-legend { position: absolute; top: 14px; left: 14px; display: flex; align-items: center; gap: 12px; padding: 7px 11px; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--iron-border); backdrop-filter: blur(8px); font: 500 10px var(--font-mono); color: var(--gull); text-transform: uppercase; letter-spacing: 0.06em; }
+.pr-legend-swatch { display: inline-flex; align-items: center; gap: 5px; }
+.pr-legend-swatch i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.pr-legend-more { display: inline-flex; align-items: center; justify-content: center; padding: 0; background: transparent; border: 1px solid var(--iron-border); color: var(--gull); cursor: pointer; width: 18px; height: 18px; line-height: 1; border-radius: 50%; font: 600 11px var(--font-mono); }
+.pr-legend-more:hover { color: var(--bone); border-color: var(--accent); }
+.pr-legend-card { top: 52px; left: 14px; width: 300px; }
+
+/* --- layout toggle (top-right overlay) --------------------------------- */
+.pr-cockpit-layout { position: absolute; top: 14px; right: 14px; z-index: 6; }
+
+/* --- slide-in detail panel --------------------------------------------- */
+.pr-cockpit-detail { position: absolute; top: 50px; right: 14px; bottom: 60px; width: 300px; padding: 14px 16px 16px; overflow-y: auto; background: color-mix(in srgb, var(--panel) 96%, transparent); border: 1px solid var(--iron-border); backdrop-filter: blur(10px); box-shadow: var(--shadow-dropdown); animation: pr-slide-in var(--dur-2, .18s) var(--ease) both; }
+@keyframes pr-slide-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+.pr-detail-x { position: absolute; top: 8px; right: 10px; background: transparent; border: 0; color: var(--gull); cursor: pointer; font-size: 18px; line-height: 1; }
+.pr-detail-x:hover { color: var(--bone); }
+.pr-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-right: 18px; }
+.pr-detail-title { font: 600 13px var(--font-mono); color: var(--bone); letter-spacing: 0.02em; }
+.pr-detail-state { font: 500 10px var(--font-mono); color: var(--good); border: 1px solid color-mix(in srgb, var(--good) 50%, transparent); border-radius: 9px; padding: 1px 7px; text-transform: uppercase; }
+.pr-detail-state.is-fail { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 50%, transparent); }
+.pr-detail-sub { font: 400 11px var(--font-mono); color: var(--gull-2); margin-top: 2px; }
+.pr-detail-metrics { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font: 500 12px var(--font-mono); color: var(--bone); font-variant-numeric: tabular-nums; }
+.pr-detail-metrics .muted { color: var(--gull); }
+.pr-detail-metrics .is-fail { color: var(--bad); }
+.pr-detail-label { font: 500 10px var(--font-mono); color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin: 12px 0 5px; }
+.pr-detail-call { display: flex; align-items: baseline; gap: 7px; font: 400 11px var(--font-mono); color: var(--gull); padding: 1px 0; }
+.pr-detail-call.is-fail .pr-call-name { color: var(--bad); }
+.pr-call-glyph { color: var(--accent); width: 1ch; flex: 0 0 auto; }
+.pr-call-name { color: var(--bone); flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-call-meta { color: var(--gull-2); flex: 0 0 auto; }
+.pr-detail-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.pr-chip { font: 400 10px var(--font-mono); color: var(--gull); border: 1px solid var(--iron-border); border-radius: 4px; padding: 1px 6px; }
+.pr-chip.is-ok { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
+.pr-chip.is-fail { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+
+/* --- persistent bottom bar --------------------------------------------- */
+.pr-cockpit-bar { position: relative; flex: 0 0 auto; margin: 0 14px 14px; height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 14px; background: color-mix(in srgb, var(--panel) 94%, transparent); border: 1px solid var(--iron-border); backdrop-filter: blur(10px); overflow: hidden; }
+.pr-bar-group { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.pr-bar-right { flex: 0 1 auto; }
+.pr-bar-sep { width: 1px; height: 18px; background: var(--iron-border); flex: 0 0 auto; }
+.pr-bar-stat { font: 400 11px var(--font-mono); color: var(--gull); white-space: nowrap; }
+.pr-bar-stat b { font-weight: 600; color: var(--bone); font-variant-numeric: tabular-nums; }
+.pr-bar-stat.is-fail b { color: var(--bad); }
+.pr-bar-stat.muted b { color: var(--gull); }
+.pr-bar-label { font: 500 9px var(--font-mono); color: var(--gull-2); text-transform: uppercase; letter-spacing: 0.1em; }
+.pr-spark { width: 110px; height: 22px; min-width: 110px; flex: 0 0 auto; display: block; }
+.pr-spark-base { stroke: var(--iron-border); stroke-width: 1; }
+.pr-bar-search { width: 120px; background: var(--panel-2); border: 1px solid var(--iron-border); color: var(--bone); font: 400 11px var(--font-mono); padding: 4px 8px; }
+.pr-bar-search::placeholder { color: var(--gull-2); }
+.pr-bar-search:focus { outline: none; border-color: var(--accent); }
+.pr-bar-select { max-width: 130px; background: var(--panel-2); border: 1px solid var(--iron-border); color: var(--gull); font: 400 11px var(--font-mono); padding: 4px 6px; cursor: pointer; }
+.pr-bar-select:focus { outline: none; border-color: var(--accent); }
+
 /* Cockpit node spawn + activity rings (preserves legacy class names) */
 @keyframes pr-ring { 0% { r: 8; opacity: .8; } 100% { r: 32; opacity: 0; } }
 @keyframes pr-spawn { 0% { opacity: 0; } 100% { opacity: 1; } }
-.cockpit-node { animation: pr-spawn var(--t-slow) var(--ease) both; transform-box: fill-box; }
+@keyframes pr-dash { to { stroke-dashoffset: -40; } }
+.cockpit-node { animation: pr-spawn var(--t-slow) var(--ease) both; transform-box: fill-box; transition: filter var(--t-base) var(--ease), r var(--t-base) var(--ease); }
 .cockpit-edge { transition: x2 var(--t-base) var(--ease), y2 var(--t-base) var(--ease), x1 var(--t-base) var(--ease), y1 var(--t-base) var(--ease); }
 .cockpit-ring { fill: none; stroke: var(--accent); stroke-width: 1.5; animation: pr-ring 1.8s ease-out infinite; }
+.cockpit-status-ring { opacity: .45; transition: stroke var(--t-base) var(--ease); }
+.cockpit-status-ring.is-running { opacity: .8; stroke-dasharray: 4 6; animation: pr-dash 2s linear infinite; }
 .caret { display: inline-block; width: .55ch; background: currentColor; animation: pr-blink 1s steps(2) infinite; }
 
 /* ============================================================
@@ -641,6 +706,8 @@ option { background: var(--panel); color: var(--bone); }
 [data-reduce-motion="1"] .cockpit-node,
 [data-reduce-motion="1"] .cockpit-edge,
 [data-reduce-motion="1"] .cockpit-ring,
+[data-reduce-motion="1"] .cockpit-status-ring,
+[data-reduce-motion="1"] .pr-cockpit-detail,
 [data-reduce-motion="1"] .pr-run.is-running::before,
 [data-reduce-motion="1"] .pr-timeline-bar.is-running,
 [data-reduce-motion="1"] .pr-statusbar .item.ok::before { animation: none !important; transition: none !important; }
