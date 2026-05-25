@@ -1,13 +1,12 @@
-import { createSignal, Show, For } from "solid-js";
+import { Show, For } from "solid-js";
 import { Files } from "./explorer/Files";
 import { MapView } from "./explorer/Map";
 import { Sessions } from "./explorer/Sessions";
+import { sub, setSub, type ExplorerSub } from "../lib/explorerStore";
 
-type Sub = "files" | "map" | "sessions";
-const SUBS: Sub[] = ["files", "map", "sessions"];
+const SUBS: ExplorerSub[] = ["files", "map", "sessions"];
 
 export function Explorer() {
-  const [sub, setSub] = createSignal<Sub>("files");
   return (
     <div class="pr-explorer">
       <div class="pr-subnav">
