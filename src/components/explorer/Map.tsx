@@ -1,96 +1,37 @@
 import { createResource, createMemo, createSignal, For, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { metaToGraph } from "../../lib/cartographicum";
-import { parseFolderGraph } from "../../lib/folderGraph";
 import { RadialForceLayout } from "../../lib/layout";
 import type { PositionedNode } from "../../lib/layout";
-import { emptyGraph } from "../../lib/graph";
 import { vaultPath } from "../../lib/vaultStore";
-import type { GraphState, GraphNode, GraphEdge, NoteLinks } from "../../lib/types";
+import { linksToGraph } from "../../lib/linksGraph";
+import { openNote } from "../../lib/explorerStore";
+import type { GraphState, NoteLinks } from "../../lib/types";
 
 const W = 1200, H = 860;
 const layout = new RadialForceLayout();
 
 const posMap = (nodes: PositionedNode[]) => new Map(nodes.map((p) => [p.id, p]));
-const communityColor = (c?: number) => (c == null ? "var(--accent)" : `hsl(${(c * 57) % 360},65%,62%)`);
-const folderColor = (f?: string) => (!f ? "var(--accent)" : `hsl(${(Array.from(f).reduce((a, c) => a + c.charCodeAt(0), 0) * 47) % 360},65%,62%)`);
-
-const stemOf = (rel: string) => (rel.split("/").pop() ?? rel).replace(/\.md$/i, "");
-
-/** Build a GraphState from the live wikilink adjacency: a node per note, an edge per resolved link. Pure. */
-function linksToGraph(notes: NoteLinks[]): GraphState {
-  const nodes = new Map<string, GraphNode>(), edges = new Map<string, GraphEdge>();
-  const ensure = (rel: string) => {
-    if (!nodes.has(rel)) nodes.set(rel, { id: rel, kind: "folder", label: stemOf(rel), status: "complete" });
-  };
-  for (const n of notes) {
-    ensure(n.rel);
-    for (const t of n.links) {
-      ensure(t);
-      const id = `${n.rel}->${t}`;
-      if (!edges.has(id)) edges.set(id, { id, source: n.rel, target: t });
-    }
-  }
-  return { nodes, edges, activity: [] };
-}
-
-/** Merge every folder's file-level (or symbol) graph into one, tagging each node with its folder. */
-async function loadAll(folders: string[], showSymbols: boolean): Promise<GraphState> {
-  const nodes = new Map(), edges = new Map();
-  await Promise.all(folders.map(async (folder) => {
-    try {
-      const raw = await invoke<string>("read_folder_graph", { folderPath: `${vaultPath()}\\${folder}` });
-      const g = parseFolderGraph(raw, showSymbols);
-      for (const n of g.nodes.values()) nodes.set(n.id, { ...n, session: folder });
-      for (const e of g.edges.values()) edges.set(e.id, e);
-    } catch { /* folder has no graph.json — skip */ }
-  }));
-  return { nodes, edges, activity: [] };
-}
+const folderColor = (f?: string) =>
+  (!f ? "var(--accent)" : `hsl(${(Array.from(f).reduce((a, c) => a + c.charCodeAt(0), 0) * 47) % 360},65%,62%)`);
 
 export function MapView() {
-  const [meta] = createResource(vaultPath, async (vp) => {
-    try { return JSON.parse(await invoke<string>("read_cartographicum", { vaultPath: vp })); }
-    catch { return null; }
-  });
-  const folderNames = () => (meta()?.folders ?? []).map((f: any) => f.folder as string);
-
-  const [view, setView] = createSignal<"full" | "rollup" | "links">("full"); // default: show everything
-  const [drill, setDrill] = createSignal<{ path: string; name: string } | null>(null);
-  const [showSymbols, setShowSymbols] = createSignal(false);
-
-  // Full merged graph of all folders.
-  const fullKey = createMemo(() => (view() === "full" && meta() ? `${folderNames().join(",")}|${showSymbols() ? 1 : 0}` : null));
-  const [fullData] = createResource(fullKey, async (key) => {
-    const sym = key.endsWith("|1");
-    return loadAll(folderNames(), sym);
-  });
-
-  // Single-folder drill graph (rollup mode).
-  const drillKey = createMemo(() => (drill() ? `${drill()!.path}|${showSymbols() ? 1 : 0}` : null));
-  const [drillData] = createResource(drillKey, async (key) => {
-    const i = key.lastIndexOf("|"); const path = key.slice(0, i); const sym = key.endsWith("|1");
-    try { return parseFolderGraph(await invoke<string>("read_folder_graph", { folderPath: path }), sym); }
-    catch { return emptyGraph(); }
-  });
-
-  // Live wikilink adjacency — works on any vault, with or without _Cartographicum.
-  const linksKey = createMemo(() => (view() === "links" ? vaultPath() : null));
-  const [linkNotes] = createResource(linksKey, async (vp) => {
+  const [linkNotes] = createResource(vaultPath, async (vp) => {
+    if (!vp) return [] as NoteLinks[];
     try { return await invoke<NoteLinks[]>("vault_links", { vaultPath: vp }); }
     catch { return [] as NoteLinks[]; }
   });
-  const linksGraph = createMemo(() => linksToGraph(linkNotes() ?? []));
+  const graph = createMemo<GraphState>(() => linksToGraph(linkNotes() ?? []));
 
-  const activeGraph = createMemo<GraphState>(() => {
-    if (view() === "links") return linksGraph();
-    if (view() === "full") return fullData() ?? emptyGraph();
-    if (drill()) return drillData() ?? emptyGraph();
-    return meta() ? metaToGraph(meta()) : emptyGraph();
+  // adjacency for hover highlight
+  const neighbors = createMemo(() => {
+    const m = new Map<string, Set<string>>();
+    const add = (a: string, b: string) => { (m.get(a) ?? m.set(a, new Set()).get(a)!).add(b); };
+    for (const e of graph().edges.values()) { add(e.source, e.target); add(e.target, e.source); }
+    return m;
   });
 
   const base = createMemo(() => {
-    const g = activeGraph();
+    const g = graph();
     const positioned = layout.layout(g, W, H);
     const pos = posMap(positioned);
     let bx = 0, by = 0, bw = W, bh = H;
@@ -105,28 +46,15 @@ export function MapView() {
 
   const [zoom, setZoom] = createSignal(1);
   const [pan, setPan] = createSignal({ x: 0, y: 0 });
-  const [hover, setHover] = createSignal<{ x: number; y: number; title: string; sub: string } | null>(null);
+  const [hover, setHover] = createSignal<{ x: number; y: number; id: string; title: string } | null>(null);
   let svgEl: SVGSVGElement | undefined;
   function reset() { setZoom(1); setPan({ x: 0, y: 0 }); }
 
-  const isLinks = () => view() === "links";
-  const isDrill = () => view() === "rollup" && !!drill();
-  const isOverview = () => view() === "rollup" && !drill();
-  const strokeFor = (n: any) => view() === "full" ? folderColor(n.session) : isDrill() ? communityColor(n.community) : "var(--accent)";
-  const subFor = (n: any) => {
-    if (isLinks()) return n.id ?? "";
-    if (view() === "full") return `${n.session ?? ""}${n.kind === "folder" ? `\n${n.id}` : ""}`;
-    if (isDrill()) return n.kind === "folder" ? n.id : "";
-    return n.kind === "folder" ? `${vaultPath()}\\${n.label}` : n.id?.startsWith?.("hub:") ? n.id.split(":").slice(2).join(":") : "";
+  const radiusOf = (w?: number) => Math.min(26, 5 + Math.sqrt(w ?? 0) * 3);
+  const dimmed = (id: string) => {
+    const h = hover(); if (!h) return false;
+    return id !== h.id && !(neighbors().get(h.id)?.has(id));
   };
-  function nodeClick(n: any) {
-    if (moved) return; // it was a drag, not a click
-    if (isOverview() && n.kind === "folder") { setDrill({ path: `${vaultPath()}\\${n.label}`, name: n.label }); reset(); }
-  }
-
-  // FULL / FOLDERS need a _Cartographicum; LINKS is computed live. Show the
-  // empty-state message only when a meta-backed mode has no meta.
-  const noGraph = () => !isLinks() && !meta();
 
   const viewBox = createMemo(() => {
     const b = base();
@@ -135,8 +63,6 @@ export function MapView() {
     return `${cx - w / 2} ${cy - h / 2} ${w} ${h}`;
   });
   function onWheel(e: WheelEvent) { e.preventDefault(); const f = e.deltaY < 0 ? 1.2 : 1 / 1.2; setZoom((z) => Math.min(8, Math.max(0.3, z * f))); }
-  // Pan via drag, but only AFTER the pointer actually moves — so a plain click still
-  // reaches the node (no pointer-capture stealing the click).
   let down = false, moved = false, lx = 0, ly = 0;
   function onDown(e: PointerEvent) { down = true; moved = false; lx = e.clientX; ly = e.clientY; }
   function onMove(e: PointerEvent) {
@@ -148,58 +74,37 @@ export function MapView() {
     lx = e.clientX; ly = e.clientY;
   }
   function onUp() { down = false; }
-
-  const loading = () => (isLinks() ? linkNotes.loading : view() === "full" ? fullData.loading : drillData.loading);
+  function nodeClick(id: string) { if (!moved) openNote(id); }
 
   return (
     <div class="pr-map-wrap">
       <div class="pr-info-card pr-map-info">
         <h3>CARTOGRAPHICUM</h3>
-        <div class="pr-map-toggle">
-          <button class={view() === "full" ? "is-active" : ""} onClick={() => { setView("full"); reset(); }}>FULL VAULT</button>
-          <button class={view() === "rollup" ? "is-active" : ""} onClick={() => { setView("rollup"); setDrill(null); reset(); }}>FOLDERS</button>
-          <button class={view() === "links" ? "is-active" : ""} onClick={() => { setView("links"); setDrill(null); reset(); }}>LINKS</button>
-        </div>
-        <Show when={isLinks()}>
-          <p>Notes linked by <b><code>[[wikilinks]]</code></b>, parsed live — works on any vault, with or without a Cartographicum.</p>
-        </Show>
-        <Show when={view() === "full"}>
-          <p>Every folder's files merged into one graph, coloured by <b>folder</b>; links are cross-file references.</p>
-        </Show>
-        <Show when={isOverview()}>
-          <p>Each <b>folder</b> sized by note count, linked to its top <b>hub</b>. Click a folder to drill in.</p>
-        </Show>
-        <Show when={isDrill()}>
-          <p><b>{drill()!.name}</b> — files coloured by <b>community</b>. <a style={{ cursor: "pointer", "text-decoration": "underline", color: "var(--accent)" }} onClick={() => { setDrill(null); reset(); }}>back</a></p>
-        </Show>
-        <Show when={!isLinks()}>
-          <label class="pr-check">
-            <input type="checkbox" checked={showSymbols()} onChange={(e) => { setShowSymbols(e.currentTarget.checked); reset(); }} /> show symbols <span style={{ color: "var(--gull-2)" }}>· heavier</span>
-          </label>
-        </Show>
-        <div class="pr-info-meta" style={{ "margin-top": "8px" }}>scroll = zoom · drag = pan · <a onClick={reset}>reset</a></div>
+        <p>Every note linked by <b><code>[[wikilinks]]</code></b>, parsed live — coloured by <b>folder</b>, sized by <b>link count</b>. Works on any vault.</p>
+        <div class="pr-info-meta" style={{ "margin-top": "8px" }}>scroll = zoom · drag = pan · click a node to open · <a onClick={reset}>reset</a></div>
       </div>
-      <Show when={!noGraph()} fallback={<div style={{ padding: "14px", color: "var(--gull)" }}>No Cartographicum meta.json found.</div>}>
+      <Show when={(linkNotes() ?? []).length} fallback={<div style={{ padding: "14px", color: "var(--gull)" }}>No linked notes in this vault.</div>}>
         <svg ref={svgEl} width="100%" height="100%" viewBox={viewBox()} preserveAspectRatio="xMidYMid meet"
           style={{ cursor: "grab", "touch-action": "none" }}
           onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
           <For each={[...base().g.edges.values()]}>{(e) => {
             const a = () => base().pos.get(e.source); const b = () => base().pos.get(e.target);
-            return <Show when={a() && b()}><line x1={a()!.x} y1={a()!.y} x2={b()!.x} y2={b()!.y} stroke="var(--border)" stroke-width="1" opacity="0.7" /></Show>;
+            const dim = () => dimmed(e.source) && dimmed(e.target);
+            return <Show when={a() && b()}><line x1={a()!.x} y1={a()!.y} x2={b()!.x} y2={b()!.y} stroke="var(--border)" stroke-width="1" opacity={dim() ? 0.1 : 0.7} /></Show>;
           }}</For>
           <For each={[...base().g.nodes.values()]}>{(n) => {
             const p = () => base().pos.get(n.id);
-            const r = isOverview() && n.kind === "folder" ? Math.min(30, 10 + Math.sqrt((n as any).weight ?? 1)) : n.kind === "folder" ? 7 : 5;
+            const r = radiusOf((n as any).weight);
             return (
               <Show when={p()}>
-                <g style={{ cursor: isOverview() && n.kind === "folder" ? "pointer" : "default" }}
-                  onClick={() => nodeClick(n)}
-                  onMouseEnter={(e) => setHover({ x: e.clientX, y: e.clientY, title: n.label, sub: subFor(n) })}
-                  onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY, title: n.label, sub: subFor(n) })}
+                <g style={{ cursor: "pointer", opacity: dimmed(n.id) ? 0.15 : 1 }}
+                  onClick={() => nodeClick(n.id)}
+                  onMouseEnter={(e) => setHover({ x: e.clientX, y: e.clientY, id: n.id, title: n.label })}
+                  onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY, id: n.id, title: n.label })}
                   onMouseLeave={() => setHover(null)}>
-                  <circle cx={p()!.x} cy={p()!.y} r={r} fill="var(--panel)" stroke={strokeFor(n)} stroke-width="2" />
-                  <Show when={isOverview() || isDrill() || isLinks() ? true : r >= 7}>
-                    <text x={p()!.x + r + 4} y={p()!.y + 4} fill="var(--fg)" style={{ "font-size": view() === "full" ? "10px" : "13px" }}>{n.label}</text>
+                  <circle cx={p()!.x} cy={p()!.y} r={r} fill="var(--panel)" stroke={folderColor(n.session)} stroke-width="2" />
+                  <Show when={r >= 7 || hover()?.id === n.id}>
+                    <text x={p()!.x + r + 4} y={p()!.y + 4} fill="var(--fg)" style={{ "font-size": "11px" }}>{n.label}</text>
                   </Show>
                 </g>
               </Show>
@@ -207,13 +112,13 @@ export function MapView() {
           }}</For>
         </svg>
       </Show>
-      <Show when={loading()}>
+      <Show when={linkNotes.loading}>
         <div style={{ position: "absolute", bottom: "12px", left: "12px", color: "var(--gull-2)", "font-size": "11px", "font-family": "var(--font-mono)" }}>building graph…</div>
       </Show>
       <Show when={hover()}>
         <div class="pr-tooltip" style={{ left: `${hover()!.x + 14}px`, top: `${hover()!.y + 14}px` }}>
           {hover()!.title}
-          <Show when={hover()!.sub}><span class="sub">{hover()!.sub}</span></Show>
+          <span class="sub">{hover()!.id}</span>
         </div>
       </Show>
     </div>
