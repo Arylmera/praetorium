@@ -18,7 +18,7 @@ const ROUTES: Record<View, () => any> = {
   settings: Settings,
 };
 import { theme, themedCopy } from "./themes/theme";
-import { applyReduceMotion, layoutName, setLayout, glass } from "./lib/settings";
+import { applyReduceMotion, layoutName, glass } from "./lib/settings";
 import { applyWatch, refreshMetas } from "./lib/sessionStore";
 import { watchSessions } from "./lib/sessions";
 
@@ -68,10 +68,6 @@ function App() {
 
         <div class="pr-topbar-actions">
           <span class="pr-brand-sub">v0.4-dev</span>
-          <div class="pr-range" role="group" aria-label="Layout">
-            <button class={layoutName() === "radial" ? "is-active" : ""} onClick={() => setLayout("radial")}>radial</button>
-            <button class={layoutName() === "hierarchical" ? "is-active" : ""} onClick={() => setLayout("hierarchical")}>hier.</button>
-          </div>
           <WindowControls />
         </div>
       </header>

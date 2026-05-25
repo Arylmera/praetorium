@@ -165,17 +165,26 @@ export function Cockpit() {
     return `${cx - w / 2} ${cy - h / 2} ${w} ${h}`;
   });
   function onWheel(e: WheelEvent) { e.preventDefault(); const f = e.deltaY < 0 ? 1.2 : 1 / 1.2; setZoom((z) => Math.min(8, Math.max(0.4, z * f))); }
-  let drag = false, moved = false, lx = 0, ly = 0;
-  function onDown(e: PointerEvent) { drag = true; moved = false; lx = e.clientX; ly = e.clientY; (e.currentTarget as Element).setPointerCapture?.(e.pointerId); }
+  let drag = false, moved = false, captured = false, lx = 0, ly = 0;
+  // NB: capture is deferred until the pointer actually moves past the drag
+  // threshold — capturing on pointerdown would steal the click from nodes.
+  function onDown(e: PointerEvent) { drag = true; moved = false; captured = false; lx = e.clientX; ly = e.clientY; }
   function onMove(e: PointerEvent) {
     if (!drag || !svgEl) return;
-    if (Math.abs(e.clientX - lx) + Math.abs(e.clientY - ly) > 3) moved = true;
+    if (!moved) {
+      if (Math.abs(e.clientX - lx) + Math.abs(e.clientY - ly) <= 3) return;
+      moved = true;
+      (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+      captured = true;
+      lx = e.clientX; ly = e.clientY; // reset origin so the pan doesn't jump
+      return;
+    }
     const r = svgEl.getBoundingClientRect();
     const scale = (bounds().bw / zoom()) / r.width;
     setPan((p) => ({ x: p.x - (e.clientX - lx) * scale, y: p.y - (e.clientY - ly) * scale }));
     lx = e.clientX; ly = e.clientY;
   }
-  function onUp() { drag = false; }
+  function onUp(e: PointerEvent) { drag = false; if (captured) { (e.currentTarget as Element).releasePointerCapture?.(e.pointerId); captured = false; } }
   function reset() { setZoom(1); setPan({ x: 0, y: 0 }); }
 
   // Distinct projects for the filter dropdown.
@@ -279,6 +288,12 @@ export function Cockpit() {
         }}</For>
       </svg>
 
+      {/* layout toggle pinned top-right */}
+      <div class="pr-cockpit-layout pr-seg">
+        <button class={layoutName() === "radial" ? "is-active" : ""} onClick={() => setLayout("radial")}>radial</button>
+        <button class={layoutName() === "hierarchical" ? "is-active" : ""} onClick={() => setLayout("hierarchical")}>hier</button>
+      </div>
+
       {/* mini legend pinned top-left, expandable to a full popover */}
       <div class="pr-legend">
         <For each={[["read","read"],["edit","edit"],["bash","bash"],["web","web"],["search","grep"],["other","other"]] as const}>{([cat,lbl]) => (
@@ -334,37 +349,41 @@ export function Cockpit() {
         </div>
       )}</Show>
 
-      {/* persistent bottom bar: counts · sparkline · search · filters · layout */}
+      {/* persistent bottom bar: counts (left) · activity + search + filters + layout (right) */}
       <div class="pr-cockpit-bar">
-        <span class="pr-bar-stat"><b>{aggregates().agents}</b> agents</span>
-        <span class="pr-bar-stat"><b>{aggregates().sessions}</b> sessions</span>
-        <span class="pr-bar-stat is-fail"><b>{aggregates().fails}</b> fail</span>
-        <span class="pr-bar-stat muted"><b>{aggregates().idle}</b> idle</span>
-        <span class="pr-bar-stat"><b>{aggregates().folders}</b> folders</span>
-        <svg class="pr-spark" viewBox="0 0 120 24" preserveAspectRatio="none">
-          {(() => {
-            const data = aggregates().callsPerSec;
-            const max = Math.max(1, ...data);
-            const bw = 120 / data.length;
-            return <For each={data}>{(v, i) => (
-              <rect x={i() * bw} y={24 - (v / max) * 24} width={Math.max(0.5, bw - 0.3)} height={(v / max) * 24} fill="var(--good)" />
-            )}</For>;
-          })()}
-        </svg>
-        <input class="pr-bar-search" placeholder="search" value={query()} onInput={(e) => setQuery(e.currentTarget.value)} />
-        <select class="pr-bar-select" value={projFilter()} onChange={(e) => setProjFilter(e.currentTarget.value)}>
-          <option value="all">all projects</option>
-          <For each={projects()}>{(p) => <option value={p}>{truncate(p, 22)}</option>}</For>
-        </select>
-        <select class="pr-bar-select" value={statusFilter()} onChange={(e) => setStatusFilter(e.currentTarget.value)}>
-          <option value="all">any status</option>
-          <option value="running">running</option>
-          <option value="failed">failed</option>
-          <option value="idle">idle</option>
-        </select>
-        <div class="pr-seg">
-          <button class={layoutName() === "radial" ? "is-active" : ""} onClick={() => setLayout("radial")}>radial</button>
-          <button class={layoutName() === "hierarchical" ? "is-active" : ""} onClick={() => setLayout("hierarchical")}>hier</button>
+        <div class="pr-bar-group">
+          <span class="pr-bar-stat"><b>{aggregates().agents}</b> agents</span>
+          <span class="pr-bar-sep" />
+          <span class="pr-bar-stat"><b>{aggregates().sessions}</b> sessions</span>
+          <span class="pr-bar-stat is-fail"><b>{aggregates().fails}</b> fail</span>
+          <span class="pr-bar-stat muted"><b>{aggregates().idle}</b> idle</span>
+          <span class="pr-bar-stat"><b>{aggregates().folders}</b> folders</span>
+        </div>
+        <div class="pr-bar-group pr-bar-right">
+          <span class="pr-bar-label">activity</span>
+          <svg class="pr-spark" viewBox="0 0 120 24" preserveAspectRatio="none">
+            <line class="pr-spark-base" x1="0" y1="23.5" x2="120" y2="23.5" />
+            {(() => {
+              const data = aggregates().callsPerSec;
+              const max = Math.max(1, ...data);
+              const bw = 120 / data.length;
+              return <For each={data}>{(v, i) => (
+                <rect x={i() * bw + 0.15} y={24 - Math.max(v ? 1.5 : 0, (v / max) * 23)} width={Math.max(0.6, bw - 0.3)} height={Math.max(v ? 1.5 : 0, (v / max) * 23)} fill="var(--good)" opacity="0.85" />
+              )}</For>;
+            })()}
+          </svg>
+          <span class="pr-bar-sep" />
+          <input class="pr-bar-search" placeholder="search" value={query()} onInput={(e) => setQuery(e.currentTarget.value)} />
+          <select class="pr-bar-select" value={projFilter()} onChange={(e) => setProjFilter(e.currentTarget.value)}>
+            <option value="all">all projects</option>
+            <For each={projects()}>{(p) => <option value={p}>{truncate(p, 22)}</option>}</For>
+          </select>
+          <select class="pr-bar-select" value={statusFilter()} onChange={(e) => setStatusFilter(e.currentTarget.value)}>
+            <option value="all">any status</option>
+            <option value="running">running</option>
+            <option value="failed">failed</option>
+            <option value="idle">idle</option>
+          </select>
         </div>
       </div>
 
