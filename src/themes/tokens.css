@@ -371,10 +371,17 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 
 /* Failure radar — session-list dot + Console banner */
 .pr-session-bullet.is-failed { background: var(--bad); }
-.pr-fail-banner { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 8px 12px; background: color-mix(in srgb, var(--bad) 14%, transparent); border: 1px solid var(--bad); color: var(--bad); font: 500 11.5px var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; transition: background var(--dur-snap); }
-.pr-fail-banner:hover { background: color-mix(in srgb, var(--bad) 22%, transparent); }
+.pr-fail-banner { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; padding: 8px 12px; background: color-mix(in srgb, var(--bad) 14%, transparent); border: 1px solid var(--bad); color: var(--bad); font: 500 11.5px var(--font-mono); }
+.pr-fail-banner-head { display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; }
+.pr-fail-banner-head:hover { color: color-mix(in srgb, var(--bad) 80%, var(--bone)); }
 .pr-fail-banner .glyph { font-size: 12px; }
 .pr-fail-banner .count { font-variant-numeric: tabular-nums; }
+.pr-fail-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.pr-fail-item { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 2px 4px; border-radius: 2px; cursor: pointer; transition: background var(--dur-snap); }
+.pr-fail-item:hover { background: color-mix(in srgb, var(--bad) 18%, transparent); }
+.pr-fail-tool { flex: 0 0 auto; font-weight: 600; }
+.pr-fail-path { flex: 0 0 auto; color: color-mix(in srgb, var(--bad) 70%, var(--bone)); }
+.pr-fail-msg { flex: 1 1 auto; min-width: 0; color: color-mix(in srgb, var(--bad) 55%, var(--bone)); font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Tool-call timeline (swimlane / Gantt) */
 @keyframes pr-tl-pulse { 0%,49% { opacity: 1; } 50%,100% { opacity: .35; } }
@@ -611,13 +618,40 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 .pr-seg button { background: transparent; border: 0; border-radius: 0; cursor: pointer; font: 500 11px var(--font-mono); color: var(--gull); padding: 6px 14px; text-transform: uppercase; letter-spacing: 0.06em; transition: color var(--dur-snap), background var(--dur-snap); }
 .pr-seg button:hover { color: var(--bone); }
 .pr-seg button.is-active { background: var(--bg); color: var(--bone); }
-.pr-toggle-row { display: flex; align-items: center; gap: 10px; font: var(--t-mono); color: var(--gull); cursor: pointer; user-select: none; }
-.pr-toggle-row .hint { color: var(--gull-2); font-size: 11px; }
 
-/* Settings vault row: current path + Change… picker. */
-.pr-vault-row { display: flex; align-items: center; gap: 12px; }
-.pr-vault-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12.5px var(--font-mono); color: var(--bone); background: var(--panel-2); border: 1px solid var(--iron-border); padding: 7px 10px; }
-.pr-vault-change { flex: 0 0 auto; background: var(--panel-2); border: 1px solid var(--iron-border); color: var(--bone); cursor: pointer; font: 500 11px var(--font-mono); padding: 7px 14px; text-transform: uppercase; letter-spacing: 0.06em; transition: color var(--dur-snap), border-color var(--dur-snap); }
+/* ── Canonical settings entry ──────────────────────────────────────────
+   Reusable vocabulary for every settings control (see components/settings/
+   atoms.tsx): a bordered row with title + description and a control on the
+   right — either a pill toggle (.pr-switch) or a static control (button).
+   `.is-static` rows aren't clickable; `.is-on` rows accent their border. */
+.pr-setting-row { display: flex; align-items: center; gap: 16px; padding: 12px 14px; border: 1px solid var(--iron-border); background: var(--panel-2); cursor: pointer; transition: border-color var(--dur-snap) var(--ease), background var(--dur-snap) var(--ease); }
+.pr-setting-row:hover { border-color: var(--iron-border-2); }
+.pr-setting-row:focus-visible { outline: none; border-color: var(--accent); }
+.pr-setting-row.is-on { border-color: color-mix(in oklab, var(--accent) 50%, var(--iron-border)); }
+.pr-setting-row.is-static { cursor: default; }
+.pr-setting-row.is-static:hover { border-color: var(--iron-border); }
+.pr-setting-row-text { flex: 1; min-width: 0; }
+.pr-setting-row-title { font: 600 13px var(--font-prose); color: var(--bone); }
+.pr-setting-row-desc { font: 400 12px/1.45 var(--font-prose); color: var(--gull); margin-top: 3px; }
+.pr-setting-row-path { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12px var(--font-mono); color: var(--gull); margin-top: 3px; }
+
+/* Pill toggle — the on/off control inside a toggle SettingRow. */
+.pr-switch { position: relative; flex: 0 0 auto; width: 32px; height: 18px; background: var(--panel-2); border: 1px solid var(--iron-border-2); border-radius: 999px; transition: background var(--dur-snap) var(--ease), border-color var(--dur-snap) var(--ease); }
+.pr-switch-thumb { position: absolute; top: 1px; left: 1px; width: 14px; height: 14px; border-radius: 50%; background: var(--gull); transition: transform var(--dur-snap) var(--ease), background var(--dur-snap) var(--ease); }
+.pr-switch.is-on { background: var(--accent); border-color: var(--accent); }
+.pr-switch.is-on .pr-switch-thumb { transform: translateX(14px); background: var(--panel-solid); }
+
+/* Labeled range slider — pairs with a SettingRow for graduated values. */
+.pr-setting-slider { display: flex; flex-direction: column; gap: 6px; padding: 4px 14px 2px; }
+.pr-setting-slider-head { display: flex; justify-content: space-between; align-items: baseline; }
+.pr-setting-slider-label { font: 500 10px var(--font-mono); color: var(--gull); text-transform: uppercase; letter-spacing: 0.1em; }
+.pr-setting-slider input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; background: var(--iron-border-2); border-radius: 2px; outline: none; cursor: pointer; }
+.pr-setting-slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--panel-solid); cursor: pointer; }
+.pr-setting-slider input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--panel-solid); cursor: pointer; }
+.pr-setting-slider-legend { display: flex; justify-content: space-between; font: 400 10px var(--font-mono); color: var(--gull-2); }
+
+/* Vault Change… picker — the static control inside the ROOT SettingRow. */
+.pr-vault-change { flex: 0 0 auto; background: var(--panel); border: 1px solid var(--iron-border-2); color: var(--bone); cursor: pointer; font: 500 11px var(--font-mono); padding: 7px 14px; text-transform: uppercase; letter-spacing: 0.06em; transition: color var(--dur-snap), border-color var(--dur-snap); }
 .pr-vault-change:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ============================================================

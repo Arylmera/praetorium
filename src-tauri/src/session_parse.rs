@@ -8,7 +8,23 @@ pub enum SessionEvent {
     Turn { role: String, text: String },
     SubagentSpawn { tool_use_id: String, subagent_type: String },
     ToolActivity { tool_use_id: String, name: String, file_path: Option<String> },
-    ToolDone { tool_use_id: String, is_error: bool },
+    ToolDone { tool_use_id: String, is_error: bool, error: Option<String> },
+}
+
+/// Extract human-readable text from a tool_result `content` field (a bare string
+/// or an array of text blocks). Surfaces *why* a call failed. None if empty.
+fn tool_result_text(content: Option<&Value>) -> Option<String> {
+    let s = match content? {
+        Value::String(s) => s.clone(),
+        Value::Array(blocks) => blocks
+            .iter()
+            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => return None,
+    };
+    let s = s.trim();
+    if s.is_empty() { None } else { Some(s.to_string()) }
 }
 
 fn content_text(blocks: &[Value]) -> String {
@@ -68,7 +84,9 @@ pub fn parse_transcript_line(line: &str) -> Vec<SessionEvent> {
                 Some("tool_result") => {
                     let id = b.get("tool_use_id").and_then(|s| s.as_str()).unwrap_or("").to_string();
                     let is_error = b.get("is_error").and_then(|x| x.as_bool()).unwrap_or(false);
-                    out.push(SessionEvent::ToolDone { tool_use_id: id, is_error });
+                    // Keep the result text only on failure — that's the "what went wrong".
+                    let error = if is_error { tool_result_text(b.get("content")) } else { None };
+                    out.push(SessionEvent::ToolDone { tool_use_id: id, is_error, error });
                 }
                 _ => {}
             }
@@ -116,21 +134,35 @@ mod tests {
         // A master-level tool call's result (e.g. Read) lives in a user message.
         let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"r1","is_error":false}]}}"#;
         let evs = parse_transcript_line(line);
-        assert_eq!(evs, vec![SessionEvent::ToolDone { tool_use_id: "r1".into(), is_error: false }]);
+        assert_eq!(evs, vec![SessionEvent::ToolDone { tool_use_id: "r1".into(), is_error: false, error: None }]);
     }
 
     #[test]
     fn tool_result_error_flag_is_captured() {
         let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"r2","is_error":true}]}}"#;
         let evs = parse_transcript_line(line);
-        assert!(evs.contains(&SessionEvent::ToolDone { tool_use_id: "r2".into(), is_error: true }));
+        assert!(evs.contains(&SessionEvent::ToolDone { tool_use_id: "r2".into(), is_error: true, error: None }));
     }
 
     #[test]
     fn tool_result_missing_is_error_defaults_false() {
         let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"r3"}]}}"#;
         let evs = parse_transcript_line(line);
-        assert_eq!(evs, vec![SessionEvent::ToolDone { tool_use_id: "r3".into(), is_error: false }]);
+        assert_eq!(evs, vec![SessionEvent::ToolDone { tool_use_id: "r3".into(), is_error: false, error: None }]);
+    }
+
+    #[test]
+    fn tool_result_error_text_is_captured_from_string() {
+        let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"r4","is_error":true,"content":"File not found"}]}}"#;
+        let evs = parse_transcript_line(line);
+        assert_eq!(evs, vec![SessionEvent::ToolDone { tool_use_id: "r4".into(), is_error: true, error: Some("File not found".into()) }]);
+    }
+
+    #[test]
+    fn tool_result_error_text_is_captured_from_blocks() {
+        let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"r5","is_error":true,"content":[{"type":"text","text":"boom"}]}]}}"#;
+        let evs = parse_transcript_line(line);
+        assert_eq!(evs, vec![SessionEvent::ToolDone { tool_use_id: "r5".into(), is_error: true, error: Some("boom".into()) }]);
     }
 
     #[test]

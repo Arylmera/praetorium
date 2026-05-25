@@ -1,8 +1,9 @@
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { THEME_LIST, theme, setTheme, type ThemeGroup, type ThemeInfo } from "../themes/theme";
-import { glass, setGlass, reduceMotion, setReduceMotion, applyReduceMotion } from "../lib/settings";
+import { glass, setGlass, glassOpacity, setGlassOpacity, reduceMotion, setReduceMotion, applyReduceMotion } from "../lib/settings";
 import { vaultPath, setVaultPath } from "../lib/vaultStore";
+import { SettingRow, SettingSlider } from "./settings/atoms";
 
 async function pickVault() {
   const result = await open({ directory: true, multiple: false });
@@ -54,10 +55,11 @@ export function Settings() {
               <span class="h">ROOT</span>
               <span class="meta">vault path</span>
             </div>
-            <div class="pr-vault-row">
-              <span class="pr-vault-path" title={vaultPath()}>{vaultPath()}</span>
-              <button class="pr-vault-change" onClick={pickVault}>Change…</button>
-            </div>
+            <SettingRow
+              title="Root directory"
+              desc={<span class="pr-setting-row-path" title={vaultPath()}>{vaultPath()}</span>}
+              control={<button class="pr-vault-change" onClick={pickVault}>Change…</button>}
+            />
           </div>
         </div>
       </section>
@@ -72,7 +74,7 @@ export function Settings() {
           <div class="pr-set-section">
             <div class="pr-set-section-head">
               <span class="h">THEME</span>
-              <span class="meta">appearance</span>
+              <span class="meta">color scheme</span>
             </div>
             <ThemeGrid group="dark" />
             <ThemeGrid group="light" />
@@ -80,16 +82,30 @@ export function Settings() {
           </div>
 
           <div class="pr-set-section">
-            <div class="pr-set-section-head"><span class="h">WINDOW</span></div>
-            <label class="pr-toggle-row">
-              <input type="checkbox" checked={glass()} onChange={(e) => setGlass(e.currentTarget.checked)} />
-              enable backdrop blur <span class="hint">· Tauri only</span>
-            </label>
-            <label class="pr-toggle-row">
-              <input type="checkbox" checked={reduceMotion()}
-                onChange={(e) => { setReduceMotion(e.currentTarget.checked); applyReduceMotion(); }} />
-              reduce motion <span class="hint">· disable scan-line, pulses, blink</span>
-            </label>
+            <div class="pr-set-section-head">
+              <span class="h">WINDOW</span>
+              <span class="meta">chrome &amp; motion</span>
+            </div>
+            <SettingRow
+              title="Translucent window"
+              desc="Show desktop wallpaper through the app with a frosted-glass blur. macOS / Windows 11."
+              checked={glass()}
+              onToggle={setGlass}
+            />
+            <Show when={glass()}>
+              <SettingSlider
+                label="Panel opacity"
+                value={glassOpacity()}
+                onInput={setGlassOpacity}
+                legend={["more transparent", "more solid"]}
+              />
+            </Show>
+            <SettingRow
+              title="Reduce motion"
+              desc="Disable scan-line sweep, pulses, and the blinking cursor."
+              checked={reduceMotion()}
+              onToggle={(v) => { setReduceMotion(v); applyReduceMotion(); }}
+            />
           </div>
         </div>
       </section>

@@ -17,9 +17,11 @@
         "height": 800,
         "minWidth": 720,
         "minHeight": 520,
-        "decorations": false
+        "decorations": false,
+        "transparent": true
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": null
     }
@@ -33,6 +35,11 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "wix": {
+        "template": "windows/main.wxs"
+      }
+    }
   }
 }

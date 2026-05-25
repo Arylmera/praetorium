@@ -31,6 +31,11 @@ export function Console() {
   const calls = (id: string | null): ToolCall[] => (id ? insights().get(id) ?? [] : []);
   const activeCalls = () => calls(activeId());
   const failCount = (id: string | null) => (id ? failures(insights(), id) : 0);
+  const failingCalls = () => activeCalls().filter((c) => c.status === "error");
+  // Basename for the failure list; keeps long paths from blowing out the banner.
+  const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
+  // First non-empty line of the captured error — CSS handles the horizontal ellipsis.
+  const firstLine = (s: string) => s.split("\n").find((l) => l.trim()) ?? s;
 
   // Ordered swimlanes: master first, then each subagent ref in first-seen order.
   const lanes = () => {
@@ -230,10 +235,23 @@ export function Console() {
 
         <div class="pr-stream" ref={streamRef}>
           <Show when={active() && failCount(activeId()) > 0}>
-            <div class="pr-fail-banner" onClick={scrollToFirstFailure} title="scroll to first failure">
-              <span class="glyph">▲</span>
-              <span class="count">{failCount(activeId())}</span>
-              <span>{failCount(activeId()) === 1 ? "failure" : "failures"}</span>
+            <div class="pr-fail-banner">
+              <div class="pr-fail-banner-head" onClick={scrollToFirstFailure} title="scroll to first failure">
+                <span class="glyph">▲</span>
+                <span class="count">{failCount(activeId())}</span>
+                <span>{failCount(activeId()) === 1 ? "failure" : "failures"}</span>
+              </div>
+              <Show when={failingCalls().length > 0}>
+                <ul class="pr-fail-list">
+                  <For each={failingCalls()}>{(c) => (
+                    <li class="pr-fail-item" onClick={() => scrollToAgent(c.agentRef)} title={c.errorText ?? "scroll to this call"}>
+                      <span class="pr-fail-tool">{c.name}</span>
+                      <Show when={c.filePath}><span class="pr-fail-path">{baseName(c.filePath!)}</span></Show>
+                      <Show when={c.errorText}><span class="pr-fail-msg">{firstLine(c.errorText!)}</span></Show>
+                    </li>
+                  )}</For>
+                </ul>
+              </Show>
             </div>
           </Show>
           <Show when={active()}>
