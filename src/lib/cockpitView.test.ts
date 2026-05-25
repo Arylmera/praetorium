@@ -4,6 +4,7 @@ import {
   buildNodeLive,
   buildAggregates,
   buildDetail,
+  collapseFinishedAgents,
   IDLE_MS,
 } from "./cockpitView";
 import type { GraphState, GraphNode, GraphEdge, ActivityPing } from "./types";
@@ -154,6 +155,54 @@ describe("buildDetail", () => {
 
   it("returns null for a missing node", () => {
     expect(buildDetail(g, "nope", insights, metas, 2000)).toBeNull();
+  });
+});
+
+describe("collapseFinishedAgents", () => {
+  it("folds finished subagents into a done count on the master and redirects their folders", () => {
+    const g = graphOf(
+      [
+        node("s1:master", { kind: "master", session: "s1", status: "running" }),
+        node("s1:run", { kind: "agent", session: "s1", status: "running" }),
+        node("s1:ok", { kind: "agent", session: "s1", status: "complete" }),
+        node("s1:bad", { kind: "agent", session: "s1", status: "failed" }),
+        node("/a", { kind: "folder" }),
+        node("/b", { kind: "folder" }),
+      ],
+      [
+        edge("s1:master", "s1:run"),
+        edge("s1:master", "s1:ok"),
+        edge("s1:master", "s1:bad"),
+        edge("s1:ok", "/a"),   // finished agent's folder → should redirect to master
+        edge("s1:run", "/b"),  // running agent's folder → untouched
+      ],
+    );
+    const out = collapseFinishedAgents(g);
+    // finished agents removed, running one kept
+    expect(out.nodes.has("s1:ok")).toBe(false);
+    expect(out.nodes.has("s1:bad")).toBe(false);
+    expect(out.nodes.has("s1:run")).toBe(true);
+    // master annotated
+    const m = out.nodes.get("s1:master")!;
+    expect(m.done).toBe(2);
+    expect(m.doneFailed).toBe(1);
+    // finished subagents' identities preserved for the detail panel
+    expect(m.doneAgents).toEqual([
+      { label: "s1:ok", status: "complete" },
+      { label: "s1:bad", status: "failed" },
+    ]);
+    // folder of the finished agent now hangs off the master
+    expect(out.edges.has("s1:master->/a")).toBe(true);
+    expect(out.nodes.has("/a")).toBe(true);
+  });
+
+  it("is a no-op when there are no finished subagents", () => {
+    const g = graphOf(
+      [node("s1:master", { kind: "master", session: "s1", status: "running" }),
+       node("s1:run", { kind: "agent", session: "s1", status: "running" })],
+      [edge("s1:master", "s1:run")],
+    );
+    expect(collapseFinishedAgents(g)).toBe(g);
   });
 });
 

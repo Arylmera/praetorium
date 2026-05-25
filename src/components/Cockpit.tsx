@@ -3,7 +3,7 @@ import { graph, insights, metas, sessions } from "../lib/sessionStore";
 import { RadialForceLayout, HierarchicalLayout, type LayoutStrategy } from "../lib/layout";
 import { layoutName, setLayout } from "../lib/settings";
 import {
-  buildAggregates, buildDetail, buildNodeLive, CATEGORY_COLOR, IDLE_MS, toolCategory,
+  buildAggregates, buildDetail, buildNodeLive, collapseFinishedAgents, CATEGORY_COLOR, IDLE_MS, toolCategory,
   type NodeLive,
 } from "../lib/cockpitView";
 import type { GraphState, GraphNode } from "../lib/types";
@@ -119,8 +119,9 @@ export function Cockpit() {
   const tick = setInterval(() => setNow(Date.now()), 1000);
   onCleanup(() => clearInterval(tick));
 
-  // Collapse same-title sessions into grouped nodes before layout/render.
-  const displayGraph = createMemo(() => collapseByTitle(pruneArchived(graph())));
+  // Prune archived → collapse same-title sessions → fold finished subagents into
+  // a per-master "done" count (keeps the live graph focused on active work).
+  const displayGraph = createMemo(() => collapseFinishedAgents(collapseByTitle(pruneArchived(graph()))));
 
   // Live join (per-node liveness + machine aggregates + selected-node detail).
   const nodeLive = createMemo(() => buildNodeLive(insights(), now()));
@@ -282,6 +283,11 @@ export function Cockpit() {
                 <Show when={idle() && live()?.idleMs !== undefined}>
                   <text class="pr-node-idle" x={p()!.x + r() + 4} y={p()!.y + 16}>idle {fmtIdle(live()!.idleMs)}</text>
                 </Show>
+                <Show when={n.kind === "master" && (n.done ?? 0) > 0}>
+                  <text class="pr-node-done" classList={{ "is-fail": (n.doneFailed ?? 0) > 0 }} x={p()!.x + r() + 4} y={p()!.y + 16}>
+                    +{n.done} done{(n.doneFailed ?? 0) > 0 ? ` · ${n.doneFailed} ✗` : ""}
+                  </text>
+                </Show>
               </g>
             </Show>
           );
@@ -334,10 +340,13 @@ export function Cockpit() {
               </div>
             )}</For>
           </Show>
-          <Show when={d().subagents.length}>
-            <div class="pr-detail-label">subagents ({d().subagents.length})</div>
+          <Show when={d().subagents.length || (d().subagentsDone ?? 0) > 0}>
+            <div class="pr-detail-label">
+              subagents ({d().subagents.length} active{(d().subagentsDone ?? 0) > 0 ? ` · +${d().subagentsDone} done` : ""})
+            </div>
             <div class="pr-detail-chips">
-              <For each={d().subagents}>{(a) => <span class="pr-chip" classList={{ "is-fail": a.status === "failed", "is-ok": a.status === "complete" }}>{a.label}</span>}</For>
+              <For each={d().subagents}>{(a) => <span class="pr-chip is-running" classList={{ "is-fail": a.status === "failed" }}>{a.label}</span>}</For>
+              <For each={d().doneSubagents ?? []}>{(a) => <span class="pr-chip is-done" classList={{ "is-fail": a.status === "failed", "is-ok": a.status === "complete" }}>{a.status === "failed" ? "✗" : "✓"} {a.label}</span>}</For>
             </div>
           </Show>
           <Show when={d().folders.length}>
