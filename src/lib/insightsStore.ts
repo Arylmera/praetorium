@@ -9,6 +9,7 @@ export type ToolCall = {
   startMs: number; // arrival time of toolActivity
   endMs?: number; // arrival time of toolDone
   status: "running" | "ok" | "error";
+  errorText?: string | null; // result text captured on failure ("what went wrong")
 };
 
 /** Per-session ordered tool-call list. */
@@ -48,7 +49,7 @@ export function reduceInsights(prev: InsightsState, e: WatchEvent, nowMs: number
   // toolDone: pair by toolUseId (last matching open/closed call wins).
   const idx = lastIndexOf(calls, event.data.toolUseId);
   if (idx === -1) return prev; // orphan toolDone — ignore
-  calls[idx] = { ...calls[idx], endMs: nowMs, status: event.data.isError ? "error" : "ok" };
+  calls[idx] = { ...calls[idx], endMs: nowMs, status: event.data.isError ? "error" : "ok", errorText: event.data.isError ? event.data.error ?? null : null };
   next.set(sessionId, calls);
   return next;
 }

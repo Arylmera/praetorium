@@ -22,6 +22,9 @@ export interface GraphNode {
   session?: string;
   weight?: number;
   community?: number;
+  done?: number;       // master only: count of finished subagents collapsed into it
+  doneFailed?: number; // master only: how many of `done` ended in failure
+  doneAgents?: { label: string; status: NodeStatus }[]; // master only: the finished subagents (capped), for the detail panel
 }
 export interface GraphEdge {
   id: string;       // `${source}->${target}`
@@ -31,6 +34,7 @@ export interface GraphEdge {
 export interface ActivityPing {
   folderId: string;
   ts: number;
+  tool?: string; // tool name that caused the touch (for tool-typed pulse colors)
 }
 export interface GraphState {
   nodes: Map<string, GraphNode>;
@@ -49,7 +53,7 @@ export type SessionEvent =
   | { kind: "turn"; data: { role: string; text: string } }
   | { kind: "subagentSpawn"; data: { toolUseId: string; subagentType: string } }
   | { kind: "toolActivity"; data: { toolUseId: string; name: string; filePath: string | null } }
-  | { kind: "toolDone"; data: { toolUseId: string; isError: boolean } };
+  | { kind: "toolDone"; data: { toolUseId: string; isError: boolean; error?: string | null } };
 
 export type WatchEvent =
   | { type: "session"; data: { sessionId: string; project: string; repo?: string | null; agentRef: string; event: SessionEvent } }

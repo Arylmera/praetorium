@@ -59,7 +59,7 @@ export function reduce(prev: GraphState, ev: ClaudeEvent): GraphState {
           s.nodes.set(folderId, { id: folderId, kind: "folder", label: folderId, status: "running" });
         }
         addEdge(s, owner, folderId);
-        s.activity = [...s.activity, { folderId, ts: Date.now() }];
+        s.activity = [...s.activity, { folderId, ts: Date.now(), tool: ev.data.name }];
       }
       return s;
     }
@@ -137,7 +137,7 @@ export function reduceWatch(prev: GraphState, e: WatchEvent): GraphState {
         // event was never seen (e.g. the session predates the watcher) — no orphans.
         if (ownerId !== masterId) addEdge(s, masterId, ownerId);
         addEdge(s, ownerId, folderId);
-        s.activity = [...s.activity, { folderId, ts: Date.now() }];
+        s.activity = [...s.activity, { folderId, ts: Date.now(), tool: event.data.name }];
       }
       return s;
     }

@@ -19,7 +19,7 @@ const ROUTES: Record<View, () => any> = {
   settings: Settings,
 };
 import { theme, themedCopy } from "./themes/theme";
-import { applyReduceMotion, layoutName, setLayout, glass } from "./lib/settings";
+import { applyReduceMotion, layoutName, glass, applyGlass, glassOpacity } from "./lib/settings";
 import { applyWatch, refreshMetas } from "./lib/sessionStore";
 import { watchSessions } from "./lib/sessions";
 
@@ -43,6 +43,8 @@ function App() {
     import("@tauri-apps/api/window")
       .then((m) => m.getCurrentWindow().setDecorations(false))
       .catch(() => { /* not in a Tauri window */ });
+    // Sync native vibrancy with the persisted glass setting on launch.
+    applyGlass();
   });
   const vaultName = () => { const p = vaultPath().replace(/\\/g, "/").split("/").filter(Boolean).pop(); return p || "no vault"; };
   applyReduceMotion();
@@ -50,7 +52,7 @@ function App() {
   refreshMetas();
   setInterval(refreshMetas, 4000);
   return (
-    <div class="td-root" classList={{ "is-glass": glass() }} data-theme={theme()}>
+    <div class="td-root" classList={{ "is-glass": glass() }} data-theme={theme()} style={{ "--glass-opacity": `${glassOpacity()}%` }}>
       {/* Ambient layer for special themes — sits behind the chrome, idles otherwise */}
       <AmbientCanvas />
 
@@ -70,10 +72,6 @@ function App() {
 
         <div class="pr-topbar-actions">
           <span class="pr-brand-sub">v0.4-dev</span>
-          <div class="pr-range" role="group" aria-label="Layout">
-            <button class={layoutName() === "radial" ? "is-active" : ""} onClick={() => setLayout("radial")}>radial</button>
-            <button class={layoutName() === "hierarchical" ? "is-active" : ""} onClick={() => setLayout("hierarchical")}>hier.</button>
-          </div>
           <WindowControls />
         </div>
       </header>
