@@ -31,6 +31,7 @@ export interface GraphEdge {
 export interface ActivityPing {
   folderId: string;
   ts: number;
+  tool?: string; // tool name that caused the touch (for tool-typed pulse colors)
 }
 export interface GraphState {
   nodes: Map<string, GraphNode>;

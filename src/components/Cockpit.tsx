@@ -1,7 +1,11 @@
-import { createMemo, createSignal, For, Show, untrack } from "solid-js";
-import { graph, metas, sessions } from "../lib/sessionStore";
+import { createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
+import { graph, insights, metas, sessions } from "../lib/sessionStore";
 import { RadialForceLayout, HierarchicalLayout, type LayoutStrategy } from "../lib/layout";
 import { layoutName, setLayout } from "../lib/settings";
+import {
+  buildAggregates, buildDetail, buildNodeLive, CATEGORY_COLOR, IDLE_MS, toolCategory,
+  type NodeLive,
+} from "../lib/cockpitView";
 import type { GraphState, GraphNode } from "../lib/types";
 
 const W = 1400, H = 980;
@@ -105,9 +109,25 @@ function collapseByTitle(g: GraphState): GraphState {
   return { nodes, edges, activity: g.activity };
 }
 
+const TOOL_GLYPH: Record<string, string> = {
+  read: "▤", edit: "⊞", bash: "$", web: "◍", search: "⌕", other: "•",
+};
+
 export function Cockpit() {
+  // Coarse clock so idle/heat/sparkline recompute on a timer, not on event volume.
+  const [now, setNow] = createSignal(Date.now());
+  const tick = setInterval(() => setNow(Date.now()), 1000);
+  onCleanup(() => clearInterval(tick));
+
   // Collapse same-title sessions into grouped nodes before layout/render.
   const displayGraph = createMemo(() => collapseByTitle(pruneArchived(graph())));
+
+  // Live join (per-node liveness + machine aggregates + selected-node detail).
+  const nodeLive = createMemo(() => buildNodeLive(insights(), now()));
+  const liveOf = (n: GraphNode): NodeLive | undefined =>
+    n.kind === "master" && n.session ? nodeLive().get(`${n.session}:master`) : nodeLive().get(n.id);
+  const aggregates = createMemo(() => buildAggregates(displayGraph(), nodeLive(), insights(), now()));
+
   // Topology key: changes only when nodes/edges change, NOT on activity pings.
   const topoKey = createMemo(() => {
     const g = displayGraph();
@@ -132,6 +152,11 @@ export function Cockpit() {
   const [zoom, setZoom] = createSignal(1);
   const [pan, setPan] = createSignal({ x: 0, y: 0 });
   const [hover, setHover] = createSignal<{ x: number; y: number; text: string } | null>(null);
+  const [selected, setSelected] = createSignal<string | null>(null);
+  const [query, setQuery] = createSignal("");
+  const [projFilter, setProjFilter] = createSignal("all");
+  const [statusFilter, setStatusFilter] = createSignal("all");
+  const [legendOpen, setLegendOpen] = createSignal(false);
   let svgEl: SVGSVGElement | undefined;
   const viewBox = createMemo(() => {
     const b = bounds();
@@ -140,72 +165,226 @@ export function Cockpit() {
     return `${cx - w / 2} ${cy - h / 2} ${w} ${h}`;
   });
   function onWheel(e: WheelEvent) { e.preventDefault(); const f = e.deltaY < 0 ? 1.2 : 1 / 1.2; setZoom((z) => Math.min(8, Math.max(0.4, z * f))); }
-  let drag = false, lx = 0, ly = 0;
-  function onDown(e: PointerEvent) { drag = true; lx = e.clientX; ly = e.clientY; (e.currentTarget as Element).setPointerCapture?.(e.pointerId); }
+  let drag = false, moved = false, captured = false, lx = 0, ly = 0;
+  // NB: capture is deferred until the pointer actually moves past the drag
+  // threshold — capturing on pointerdown would steal the click from nodes.
+  function onDown(e: PointerEvent) { drag = true; moved = false; captured = false; lx = e.clientX; ly = e.clientY; }
   function onMove(e: PointerEvent) {
     if (!drag || !svgEl) return;
+    if (!moved) {
+      if (Math.abs(e.clientX - lx) + Math.abs(e.clientY - ly) <= 3) return;
+      moved = true;
+      (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+      captured = true;
+      lx = e.clientX; ly = e.clientY; // reset origin so the pan doesn't jump
+      return;
+    }
     const r = svgEl.getBoundingClientRect();
     const scale = (bounds().bw / zoom()) / r.width;
     setPan((p) => ({ x: p.x - (e.clientX - lx) * scale, y: p.y - (e.clientY - ly) * scale }));
     lx = e.clientX; ly = e.clientY;
   }
-  function onUp() { drag = false; }
+  function onUp(e: PointerEvent) { drag = false; if (captured) { (e.currentTarget as Element).releasePointerCapture?.(e.pointerId); captured = false; } }
   function reset() { setZoom(1); setPan({ x: 0, y: 0 }); }
-  const counts = createMemo(() => {
-    const g = displayGraph();
-    let agents = 0, folders = 0;
-    for (const n of g.nodes.values()) { if (n.kind === "agent") agents++; else if (n.kind === "folder") folders++; }
-    return { agents, folders, pulses: g.activity.length };
+
+  // Distinct projects for the filter dropdown.
+  const projects = createMemo(() => {
+    const set = new Set<string>();
+    for (const n of displayGraph().nodes.values()) if (n.kind === "project" || n.kind === "master") set.add(n.label);
+    return [...set].sort();
   });
+  const nodeProject = (n: GraphNode): string | undefined =>
+    n.kind === "project" || n.kind === "master" ? n.label
+    : n.session ? metas().get(n.session)?.project : undefined;
+  /** True when a node is filtered OUT (rendered dimmed). Search + project + status. */
+  const isDimmed = (n: GraphNode): boolean => {
+    const q = query().trim().toLowerCase();
+    if (q) {
+      const hay = `${n.label} ${n.kind === "master" && n.session ? sessionTitle(n.session) : ""}`.toLowerCase();
+      if (!hay.includes(q)) return true;
+    }
+    const pf = projFilter();
+    if (pf !== "all" && n.kind !== "folder" && nodeProject(n) !== pf) return true;
+    const sf = statusFilter();
+    if (sf !== "all" && (n.kind === "master" || n.kind === "agent")) {
+      const live = liveOf(n);
+      const idle = n.status === "running" && (live?.idleMs === undefined || live.idleMs > IDLE_MS);
+      if (sf === "running" && !(n.status === "running" && !idle)) return true;
+      if (sf === "failed" && n.status !== "failed") return true;
+      if (sf === "idle" && !idle) return true;
+    }
+    return false;
+  };
+
+  const detail = createMemo(() => {
+    const id = selected();
+    return id ? buildDetail(displayGraph(), id, insights(), metas(), now()) : null;
+  });
+
+  const fmtDur = (ms?: number) => ms === undefined ? "—" : ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+  const fmtIdle = (ms?: number) => ms === undefined ? "—" : ms < 1000 ? "now" : `${Math.floor(ms / 1000)}s`;
+
   return (
     <div class="pr-cockpit">
-      <div class="pr-info-card">
-        <h3>LIVE AGENT GRAPH</h3>
-        <p>Each <b>project</b> spawns <b>sessions</b> (one per master) which dispatch <b>subagents</b> linked to the <b>folders</b> they touch. Folders shared by multiple sessions stay shared. Pulses = live file reads.</p>
-        <div class="pr-info-meta">scroll = zoom · drag = pan · <a onClick={reset}>reset</a></div>
-        <div class="pr-seg">
-          <button class={layoutName() === "radial" ? "is-active" : ""} onClick={() => setLayout("radial")}>radial</button>
-          <button class={layoutName() === "hierarchical" ? "is-active" : ""} onClick={() => setLayout("hierarchical")}>hierarchical</button>
-        </div>
-      </div>
       <svg ref={svgEl} width="100%" height="100%" viewBox={viewBox()} preserveAspectRatio="xMidYMid meet"
         style={{ cursor: "grab", "touch-action": "none" }}
-        onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
+        onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}
+        onClick={() => { if (!moved) setSelected(null); }}>
         <For each={[...displayGraph().edges.values()]}>{(e) => {
           // Accessors so endpoints re-track positions() on layout change (no remount needed).
           const a = () => positions().get(e.source);
           const b = () => positions().get(e.target);
+          const dim = () => {
+            const s = displayGraph().nodes.get(e.source), t = displayGraph().nodes.get(e.target);
+            return (s && isDimmed(s)) || (t && isDimmed(t));
+          };
           return (
             <Show when={a() && b()}>
-              <line class="cockpit-edge" x1={a()!.x} y1={a()!.y} x2={b()!.x} y2={b()!.y} stroke="var(--border)" stroke-width="1.5" />
+              <line class="cockpit-edge" classList={{ "is-dimmed": !!dim() }}
+                x1={a()!.x} y1={a()!.y} x2={b()!.x} y2={b()!.y} stroke="var(--border)" stroke-width="1.5" />
             </Show>
           );
         }}</For>
         <For each={displayGraph().activity.slice(-12)}>{(ping) => {
           const p = () => positions().get(ping.folderId);
-          return <Show when={p()}><circle class="cockpit-ring" cx={p()!.x} cy={p()!.y} r="8" /></Show>;
+          const color = CATEGORY_COLOR[toolCategory(ping.tool ?? "")];
+          return <Show when={p()}><circle class="cockpit-ring" cx={p()!.x} cy={p()!.y} r="8" stroke={color} /></Show>;
         }}</For>
         <For each={[...displayGraph().nodes.values()]}>{(n) => {
           const p = () => positions().get(n.id);
-          const r = (n.kind === "master" || n.kind === "project") ? 14 : n.kind === "agent" ? 10 : 7;
+          const baseR = (n.kind === "master" || n.kind === "project") ? 14 : n.kind === "agent" ? 10 : 7;
+          const live = () => liveOf(n);
+          const rate = () => live()?.recentRate ?? 0;
+          const r = () => baseR + (n.kind === "agent" || n.kind === "master" ? rate() * 3 : 0);
+          const isRunning = () => n.status === "running" && (n.kind === "agent" || n.kind === "master");
+          const idle = () => isRunning() && (live()?.idleMs === undefined || live()!.idleMs! > IDLE_MS);
+          const ringColor = () => n.status === "failed" ? "var(--bad)" : n.status === "complete" ? "var(--good)" : "var(--accent)";
+          const glow = () => {
+            const t = rate();
+            return (n.kind === "agent" || n.kind === "master") && t > 0
+              ? `drop-shadow(0 0 ${4 + t * 14}px ${nodeStroke(n)})` : "none";
+          };
           return (
             <Show when={p()}>
-              <g style={{ cursor: "pointer" }}
+              <g classList={{ "is-dimmed": isDimmed(n), "is-idle": idle(), "is-selected": selected() === n.id }}
+                style={{ cursor: "pointer" }}
                 onMouseEnter={(e) => setHover({ x: e.clientX, y: e.clientY, text: fullLabel(n) })}
                 onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY, text: fullLabel(n) })}
-                onMouseLeave={() => setHover(null)}>
-                <circle class="cockpit-node" cx={p()!.x} cy={p()!.y} r={r} fill="var(--panel)" stroke={nodeStroke(n)} stroke-width="2" />
-                <text class="pr-node-label" x={p()!.x + r + 4} y={p()!.y + 4}>{nodeLabel(n)}</text>
+                onMouseLeave={() => setHover(null)}
+                onClick={(e) => { e.stopPropagation(); if (!moved) setSelected(n.id); }}>
+                <Show when={n.kind === "agent" || n.kind === "master"}>
+                  <circle class="cockpit-status-ring" classList={{ "is-running": n.status === "running" }}
+                    cx={p()!.x} cy={p()!.y} r={r() + 4} fill="none" stroke={ringColor()} stroke-width="1.5" />
+                </Show>
+                <circle class="cockpit-node" cx={p()!.x} cy={p()!.y} r={r()} fill="var(--panel)"
+                  stroke={nodeStroke(n)} stroke-width="2" style={{ filter: glow() }} />
+                <text class="pr-node-label" x={p()!.x + r() + 4} y={p()!.y + 4}>{nodeLabel(n)}</text>
+                <Show when={idle() && live()?.idleMs !== undefined}>
+                  <text class="pr-node-idle" x={p()!.x + r() + 4} y={p()!.y + 16}>idle {fmtIdle(live()!.idleMs)}</text>
+                </Show>
               </g>
             </Show>
           );
         }}</For>
       </svg>
 
-      <div class="pr-cockpit-stats">
-        <div class="pr-cs-cell"><span class="pr-cs-lbl">AGENTS</span><span class="pr-cs-val">{counts().agents}<small>active</small></span></div>
-        <div class="pr-cs-cell"><span class="pr-cs-lbl">FOLDERS</span><span class="pr-cs-val">{counts().folders}<small>touched</small></span></div>
-        <div class="pr-cs-cell"><span class="pr-cs-lbl">PULSES</span><span class="pr-cs-val">{counts().pulses}<small>live</small></span></div>
+      {/* layout toggle pinned top-right */}
+      <div class="pr-cockpit-layout pr-seg">
+        <button class={layoutName() === "radial" ? "is-active" : ""} onClick={() => setLayout("radial")}>radial</button>
+        <button class={layoutName() === "hierarchical" ? "is-active" : ""} onClick={() => setLayout("hierarchical")}>hier</button>
+      </div>
+
+      {/* mini legend pinned top-left, expandable to a full popover */}
+      <div class="pr-legend">
+        <For each={[["read","read"],["edit","edit"],["bash","bash"],["web","web"],["search","grep"],["other","other"]] as const}>{([cat,lbl]) => (
+          <span class="pr-legend-swatch"><i style={{ background: CATEGORY_COLOR[cat] }} />{lbl}</span>
+        )}</For>
+        <button class="pr-legend-more" onClick={() => setLegendOpen((v) => !v)}>?</button>
+      </div>
+      <Show when={legendOpen()}>
+        <div class="pr-info-card pr-legend-card">
+          <h3>LIVE AGENT GRAPH</h3>
+          <p>Each <b>project</b> spawns <b>sessions</b> (one per master) which dispatch <b>subagents</b> linked to the <b>folders</b> they touch. Pulses = file activity, colored by tool. A node's <b>glow</b> tracks recent activity; a faded node with <b>idle Ns</b> is running but quiet. The ring is green on success, red on failure.</p>
+          <div class="pr-info-meta">scroll = zoom · drag = pan · <a onClick={reset}>reset view</a></div>
+        </div>
+      </Show>
+
+      {/* slide-in detail panel (single-click a node) */}
+      <Show when={detail()}>{(d) => (
+        <div class="pr-cockpit-detail">
+          <button class="pr-detail-x" onClick={() => setSelected(null)}>×</button>
+          <div class="pr-detail-head">
+            <span class="pr-detail-title">{selected()!.startsWith("proj:") || d().kind === "folder" ? truncate(folderBase(d().label), 40) : d().sessionId ? sessionTitle(d().sessionId!) : d().label}</span>
+            <span class="pr-detail-state" classList={{ "is-fail": d().state === "failed" }}>{d().state}</span>
+          </div>
+          <div class="pr-detail-sub">{d().project ?? d().kind}</div>
+          <div class="pr-detail-metrics">
+            <span>⏱ {fmtDur(d().durationMs)}</span>
+            <span classList={{ "is-fail": d().fails > 0 }}>✗ {d().fails}</span>
+            <span>⚡ {d().calls}</span>
+            <span class="muted">idle {fmtIdle(d().idleMs)}</span>
+          </div>
+          <Show when={d().recentCalls.length}>
+            <div class="pr-detail-label">recent calls</div>
+            <For each={[...d().recentCalls].reverse()}>{(c) => (
+              <div class="pr-detail-call" classList={{ "is-fail": c.status === "error" }}>
+                <span class="pr-call-glyph">{TOOL_GLYPH[c.tool]}</span>
+                <span class="pr-call-name">{c.name}{c.target ? ` ${folderBase(c.target)}` : ""}</span>
+                <span class="pr-call-meta">{c.status === "error" ? "✗" : c.status === "ok" ? "✓" : "⟳"} {fmtDur(c.durMs)}</span>
+              </div>
+            )}</For>
+          </Show>
+          <Show when={d().subagents.length}>
+            <div class="pr-detail-label">subagents ({d().subagents.length})</div>
+            <div class="pr-detail-chips">
+              <For each={d().subagents}>{(a) => <span class="pr-chip" classList={{ "is-fail": a.status === "failed", "is-ok": a.status === "complete" }}>{a.label}</span>}</For>
+            </div>
+          </Show>
+          <Show when={d().folders.length}>
+            <div class="pr-detail-label">folders touched ({d().folders.length})</div>
+            <div class="pr-detail-chips">
+              <For each={d().folders}>{(f) => <span class="pr-chip">{folderBase(f)}</span>}</For>
+            </div>
+          </Show>
+        </div>
+      )}</Show>
+
+      {/* persistent bottom bar: counts (left) · activity + search + filters + layout (right) */}
+      <div class="pr-cockpit-bar">
+        <div class="pr-bar-group">
+          <span class="pr-bar-stat"><b>{aggregates().agents}</b> agents</span>
+          <span class="pr-bar-sep" />
+          <span class="pr-bar-stat"><b>{aggregates().sessions}</b> sessions</span>
+          <span class="pr-bar-stat is-fail"><b>{aggregates().fails}</b> fail</span>
+          <span class="pr-bar-stat muted"><b>{aggregates().idle}</b> idle</span>
+          <span class="pr-bar-stat"><b>{aggregates().folders}</b> folders</span>
+        </div>
+        <div class="pr-bar-group pr-bar-right">
+          <span class="pr-bar-label">activity</span>
+          <svg class="pr-spark" viewBox="0 0 120 24" preserveAspectRatio="none">
+            <line class="pr-spark-base" x1="0" y1="23.5" x2="120" y2="23.5" />
+            {(() => {
+              const data = aggregates().callsPerSec;
+              const max = Math.max(1, ...data);
+              const bw = 120 / data.length;
+              return <For each={data}>{(v, i) => (
+                <rect x={i() * bw + 0.15} y={24 - Math.max(v ? 1.5 : 0, (v / max) * 23)} width={Math.max(0.6, bw - 0.3)} height={Math.max(v ? 1.5 : 0, (v / max) * 23)} fill="var(--good)" opacity="0.85" />
+              )}</For>;
+            })()}
+          </svg>
+          <span class="pr-bar-sep" />
+          <input class="pr-bar-search" placeholder="search" value={query()} onInput={(e) => setQuery(e.currentTarget.value)} />
+          <select class="pr-bar-select" value={projFilter()} onChange={(e) => setProjFilter(e.currentTarget.value)}>
+            <option value="all">all projects</option>
+            <For each={projects()}>{(p) => <option value={p}>{truncate(p, 22)}</option>}</For>
+          </select>
+          <select class="pr-bar-select" value={statusFilter()} onChange={(e) => setStatusFilter(e.currentTarget.value)}>
+            <option value="all">any status</option>
+            <option value="running">running</option>
+            <option value="failed">failed</option>
+            <option value="idle">idle</option>
+          </select>
+        </div>
       </div>
 
       <Show when={hover()}>
