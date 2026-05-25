@@ -13,7 +13,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(process::RunRegistry::default())
-        .invoke_handler(tauri::generate_handler![process::run_claude, process::stop_claude, vault::read_vault_file, vault::vault_index, vault::vault_links, sessions::list_sessions, sessions::read_session, session_watch::list_live_sessions, session_watch::watch_sessions])
+        .invoke_handler(tauri::generate_handler![process::run_claude, process::stop_claude, vault::read_vault_file, vault::vault_index, vault::vault_links, sessions::list_sessions, sessions::read_session, sessions::list_all_sessions, session_watch::list_live_sessions, session_watch::watch_sessions])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
