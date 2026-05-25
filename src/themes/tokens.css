@@ -432,6 +432,8 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 
 /* --- liveness: idle / dim / selection states --------------------------- */
 .pr-node-idle { font: 400 9px var(--font-mono); fill: var(--gull-2); }
+.pr-node-done { font: 400 9px var(--font-mono); fill: var(--gull); }
+.pr-node-done.is-fail { fill: var(--bad); }
 .pr-cockpit g.is-idle { opacity: .42; }
 .pr-cockpit g.is-dimmed { opacity: .12; }
 .cockpit-edge.is-dimmed { opacity: .06; }
@@ -472,6 +474,8 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 .pr-chip { font: 400 10px var(--font-mono); color: var(--gull); border: 1px solid var(--iron-border); border-radius: 4px; padding: 1px 6px; }
 .pr-chip.is-ok { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
 .pr-chip.is-fail { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+.pr-chip.is-running { color: var(--bone); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.pr-chip.is-done { opacity: .68; }
 
 /* --- persistent bottom bar --------------------------------------------- */
 .pr-cockpit-bar { position: relative; flex: 0 0 auto; margin: 0 14px 14px; height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 14px; background: color-mix(in srgb, var(--panel) 94%, transparent); border: 1px solid var(--iron-border); backdrop-filter: blur(10px); overflow: hidden; }
