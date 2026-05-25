@@ -1,7 +1,7 @@
 // Pure view-model joining the three live stores (graph topology, insights
 // per-call data, session metas) into the fields the Cockpit renders. No Solid
 // signals here so every function is unit-testable as plain (in) → (out).
-import type { GraphState, GraphNode, LiveSessionMeta, NodeStatus } from "./types";
+import type { GraphState, GraphNode, GraphEdge, LiveSessionMeta, NodeStatus } from "./types";
 import type { InsightsState, ToolCall } from "./insightsStore";
 
 // ---- tool categorization --------------------------------------------------
@@ -45,6 +45,59 @@ export const IDLE_MS = 30_000;
 const RATE_FULL = 6;
 const RECENT_WINDOW_MS = 10_000;
 const SPARK_BUCKETS = 60; // one per second, last 60s
+const DONE_AGENTS_CAP = 50; // most-recent finished subagents retained for the detail panel
+
+// ---- collapse finished subagents ------------------------------------------
+/** Fold every FINISHED (complete/failed) subagent into a `done` count on its
+ *  parent master, removing the node but redirecting the folders it touched to
+ *  the master so the "where" trace survives. Running subagents stay as nodes.
+ *  Returns the same reference when nothing collapses (cheap no-op). */
+export function collapseFinishedAgents(g: GraphState): GraphState {
+  const parentMaster = new Map<string, string>(); // agentId -> masterId
+  for (const e of g.edges.values()) {
+    const s = g.nodes.get(e.source), t = g.nodes.get(e.target);
+    if (s?.kind === "master" && t?.kind === "agent") parentMaster.set(t.id, s.id);
+  }
+  const remove = new Set<string>();
+  const done = new Map<string, number>();
+  const failed = new Map<string, number>();
+  const agents = new Map<string, { label: string; status: NodeStatus }[]>();
+  for (const n of g.nodes.values()) {
+    if (n.kind !== "agent" || n.status === "running") continue;
+    const m = parentMaster.get(n.id);
+    if (!m) continue; // orphan finished agent: leave it rather than drop silently
+    remove.add(n.id);
+    done.set(m, (done.get(m) ?? 0) + 1);
+    if (n.status === "failed") failed.set(m, (failed.get(m) ?? 0) + 1);
+    const list = agents.get(m) ?? agents.set(m, []).get(m)!;
+    list.push({ label: n.label, status: n.status });
+    if (list.length > DONE_AGENTS_CAP) list.shift(); // bound memory; `done` keeps the true total
+  }
+  if (!remove.size) return g;
+
+  const nodes = new Map<string, GraphNode>();
+  for (const [id, n] of g.nodes) {
+    if (remove.has(id)) continue;
+    nodes.set(id, done.has(id)
+      ? { ...n, done: done.get(id), doneFailed: failed.get(id) ?? 0, doneAgents: agents.get(id) }
+      : n);
+  }
+  const edges = new Map<string, GraphEdge>();
+  for (const [id, e] of g.edges) {
+    if (remove.has(e.target)) continue;          // edge into a removed agent
+    if (remove.has(e.source)) {                  // edge out of a removed agent
+      const t = g.nodes.get(e.target);
+      const m = parentMaster.get(e.source);
+      if (t?.kind === "folder" && m && nodes.has(m) && nodes.has(e.target)) {
+        const rid = `${m}->${e.target}`;
+        if (!edges.has(rid)) edges.set(rid, { id: rid, source: m, target: e.target });
+      }
+      continue;
+    }
+    if (nodes.has(e.source) && nodes.has(e.target)) edges.set(id, e);
+  }
+  return { nodes, edges, activity: g.activity };
+}
 
 // ---- per-node liveness ----------------------------------------------------
 export interface NodeLive {
@@ -122,6 +175,7 @@ export function buildAggregates(
     else if (n.kind === "folder") folders++;
     if (n.kind === "agent" || n.kind === "master") {
       if (n.status === "failed") fails++;
+      fails += n.doneFailed ?? 0; // failures from collapsed subagents stay counted
       // Idle = running but quiet; finished (complete/failed) nodes aren't "idle".
       if (n.status === "running" && isIdle(live.get(n.id))) idle++;
     }
@@ -160,6 +214,8 @@ export interface NodeDetail {
   idleMs?: number;
   recentCalls: DetailCall[];
   subagents: { label: string; status: NodeStatus }[];
+  subagentsDone?: number; // total finished subagents collapsed into this master
+  doneSubagents?: { label: string; status: NodeStatus }[]; // the (capped) finished ones, for listing
   folders: string[];
 }
 
@@ -239,6 +295,8 @@ export function buildDetail(
     idleMs,
     recentCalls,
     subagents,
+    subagentsDone: node.done,
+    doneSubagents: node.doneAgents,
     folders: [...folderSet],
   };
 }

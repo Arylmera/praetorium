@@ -22,6 +22,9 @@ export interface GraphNode {
   session?: string;
   weight?: number;
   community?: number;
+  done?: number;       // master only: count of finished subagents collapsed into it
+  doneFailed?: number; // master only: how many of `done` ended in failure
+  doneAgents?: { label: string; status: NodeStatus }[]; // master only: the finished subagents (capped), for the detail panel
 }
 export interface GraphEdge {
   id: string;       // `${source}->${target}`
