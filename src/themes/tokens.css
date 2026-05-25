@@ -435,7 +435,7 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 .pr-legend { position: absolute; top: 14px; left: 14px; display: flex; align-items: center; gap: 12px; padding: 7px 11px; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--iron-border); backdrop-filter: blur(8px); font: 500 10px var(--font-mono); color: var(--gull); text-transform: uppercase; letter-spacing: 0.06em; }
 .pr-legend-swatch { display: inline-flex; align-items: center; gap: 5px; }
 .pr-legend-swatch i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-.pr-legend-more { background: transparent; border: 1px solid var(--iron-border); color: var(--gull); cursor: pointer; width: 18px; height: 18px; line-height: 1; border-radius: 50%; font: 600 11px var(--font-mono); }
+.pr-legend-more { display: inline-flex; align-items: center; justify-content: center; padding: 0; background: transparent; border: 1px solid var(--iron-border); color: var(--gull); cursor: pointer; width: 18px; height: 18px; line-height: 1; border-radius: 50%; font: 600 11px var(--font-mono); }
 .pr-legend-more:hover { color: var(--bone); border-color: var(--accent); }
 .pr-legend-card { top: 52px; left: 14px; width: 300px; }
 
