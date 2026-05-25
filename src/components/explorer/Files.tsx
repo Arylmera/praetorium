@@ -5,7 +5,7 @@ import { resolveWikilinks } from "../../lib/wikilinks";
 import { buildLinkMaps } from "../../lib/vaultLinks";
 import { vaultPath } from "../../lib/vaultStore";
 import { buildTree, flattenVisible } from "../../lib/fileTree";
-import { pendingNote } from "../../lib/explorerStore";
+import { pendingNote, clearPendingNote } from "../../lib/explorerStore";
 import type { VaultFile, NoteLinks } from "../../lib/types";
 
 type Sort = "name" | "modified" | "size";
@@ -52,6 +52,7 @@ export function Files() {
       return next;
     });
     open(rel);
+    clearPendingNote();
   });
 
   const filtered = createMemo(() => {

@@ -12,3 +12,9 @@ export function openNote(rel: string) {
   setPendingNote(rel);
   setSub("files");
 }
+
+/** Files calls this once it has consumed a pending note, so the same note can
+ *  be requested again later (signals only fire on value change). */
+export function clearPendingNote() {
+  setPendingNote("");
+}
