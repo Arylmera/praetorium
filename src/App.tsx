@@ -10,6 +10,7 @@ import { SpecialChrome } from "./components/SpecialChrome";
 import { CommandPalette } from "./components/CommandPalette";
 import { ViewSwitcher, type View } from "./components/ViewSwitcher";
 import { view, setView } from "./lib/viewStore";
+import { vaultPath } from "./lib/vaultStore";
 
 const ROUTES: Record<View, () => any> = {
   console: Console,
@@ -43,6 +44,7 @@ function App() {
       .then((m) => m.getCurrentWindow().setDecorations(false))
       .catch(() => { /* not in a Tauri window */ });
   });
+  const vaultName = () => { const p = vaultPath().replace(/\\/g, "/").split("/").filter(Boolean).pop(); return p || "no vault"; };
   applyReduceMotion();
   watchSessions(applyWatch);
   refreshMetas();
@@ -56,7 +58,7 @@ function App() {
       <header class="pr-topbar" data-tauri-drag-region="">
         <div class="pr-prompt" data-tauri-drag-region="">
           <span class="pr-brand-dot" />
-          <span class="pr-prompt-path">{themedCopy()?.path ?? "~/git/Terra"}</span>
+          <span class="pr-prompt-path">{themedCopy()?.path ?? vaultName()}</span>
           <span class="pr-prompt-ps1">{themedCopy()?.ps1 ?? "$"}</span>
           <span class="pr-prompt-cmd">{themedCopy()?.cmd ?? "praetorium"}</span>
           <span class="pr-prompt-flag">--view=</span><span class="pr-prompt-val">{view()}</span>
@@ -88,7 +90,7 @@ function App() {
 
       {/* ===== STATUS BAR — read-only system pings ===== */}
       <footer class="pr-statusbar">
-        <span class="item ok">vault <span class="v">Terra</span></span>
+        <span class="item ok">vault <span class="v">{vaultName()}</span></span>
         <span class="item">watch <span class="v">on</span></span>
         <span class="item layout" onClick={() => setView("settings")} style={{ cursor: "pointer" }}>layout <span class="v">{layoutName()}</span></span>
         <span class="item" onClick={() => setView("settings")} style={{ cursor: "pointer" }}>theme <span class="v">{theme()}</span></span>

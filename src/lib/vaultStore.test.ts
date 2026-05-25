@@ -18,9 +18,9 @@ describe("vaultStore", () => {
     vi.stubGlobal("localStorage", makeLocalStorage());
   });
 
-  it("falls back to the default vault when unset", async () => {
+  it("defaults to empty (no hardcoded vault) when unset", async () => {
     const m = await import("./vaultStore");
-    expect(m.vaultPath()).toBe(m.DEFAULT_VAULT);
+    expect(m.vaultPath()).toBe("");
   });
 
   it("reads a previously persisted path on load", async () => {
@@ -29,7 +29,7 @@ describe("vaultStore", () => {
     expect(m.vaultPath()).toBe("D:\\notes");
   });
 
-  it("setVaultPath updates the signal and persists to localStorage (round-trip)", async () => {
+  it("setVaultPath updates the signal and persists (round-trip)", async () => {
     const m = await import("./vaultStore");
     m.setVaultPath("E:\\vault");
     expect(m.vaultPath()).toBe("E:\\vault");
