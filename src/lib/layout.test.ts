@@ -17,6 +17,21 @@ function hubAndSpoke(children: number): GraphState {
   return { nodes, edges, activity: [] };
 }
 
+// Two unrelated projects, each a small root→master→folder chain (distinct roots).
+function twoProjects(): GraphState {
+  const nodes = new Map<string, GraphNode>();
+  const edges = new Map<string, GraphEdge>();
+  const addEdge = (s: string, t: string) => edges.set(`${s}->${t}`, { id: `${s}->${t}`, source: s, target: t });
+  for (const p of ["A", "B"]) {
+    nodes.set(`proj:${p}`, { id: `proj:${p}`, kind: "project", label: p, status: "running" });
+    nodes.set(`m:${p}`, { id: `m:${p}`, kind: "master", label: p, status: "running" });
+    nodes.set(`f:${p}`, { id: `f:${p}`, kind: "folder", label: `${p}/src`, status: "complete" });
+    addEdge(`proj:${p}`, `m:${p}`);
+    addEdge(`m:${p}`, `f:${p}`);
+  }
+  return { nodes, edges, activity: [] };
+}
+
 const state = ([
   { type: "subagentSpawn", data: { toolUseId: "a1", subagentType: "g", parentToolUseId: null } },
   { type: "toolCall", data: { toolUseId: "t1", name: "Edit", filePath: "/repo/src/x.ts", parentToolUseId: "a1" } },
@@ -52,6 +67,18 @@ describe("RadialForceLayout", () => {
     // Children share a ring: their radii should be tightly clustered, not scattered.
     const mean = childRs.reduce((a, b) => a + b, 0) / childRs.length;
     for (const cr of childRs) expect(Math.abs(cr - mean) / mean).toBeLessThan(0.35);
+  });
+
+  it("separates distinct project roots: each project's cluster keeps its distance", () => {
+    const pos = new RadialForceLayout().layout(twoProjects(), 1200, 860);
+    const at = (id: string) => pos.find((p) => p.id === id)!;
+    const centroid = (p: string) => {
+      const ns = [`proj:${p}`, `m:${p}`, `f:${p}`].map(at);
+      return { x: ns.reduce((s, n) => s + n.x, 0) / 3, y: ns.reduce((s, n) => s + n.y, 0) / 3 };
+    };
+    const a = centroid("A"), b = centroid("B");
+    // The inter-group separation force pushes the two project clusters well apart.
+    expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(240);
   });
 });
 

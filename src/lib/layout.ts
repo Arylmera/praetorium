@@ -48,6 +48,25 @@ function bfsDepth(state: GraphState): Map<string, number> {
   return depth;
 }
 
+// Map every node to its root-project group: the topmost project/repo ancestor
+// reached by walking incoming edges. Worktrees of one repo share their repo's
+// group; unrelated projects each get their own. Used to push distinct project
+// roots apart so each sunburst claims its own space instead of piling up center.
+function rootGroups(state: GraphState): Map<string, string> {
+  const parent = new Map<string, string>(); // node -> first incoming source
+  for (const e of state.edges.values()) {
+    if (!parent.has(e.target) && state.nodes.has(e.source)) parent.set(e.target, e.source);
+  }
+  const find = (id: string): string => {
+    let cur = id;
+    for (let guard = 0; parent.has(cur) && guard < 1000; guard++) cur = parent.get(cur)!;
+    return cur;
+  };
+  const group = new Map<string, string>();
+  for (const id of state.nodes.keys()) group.set(id, find(id));
+  return group;
+}
+
 export class RadialForceLayout implements LayoutStrategy {
   readonly name = "radial";
   layout(state: GraphState, width: number, height: number): PositionedNode[] {
@@ -59,12 +78,33 @@ export class RadialForceLayout implements LayoutStrategy {
     const depth = bfsDepth(state);
     const ring = Math.min(width, height) / 2 / (Math.max(0, ...depth.values()) + 1);
     const cx = width / 2, cy = height / 2;
+    // Extra breathing room between nodes belonging to DIFFERENT project roots, so
+    // unrelated projects (a root in another directory) don't crowd each other.
+    const group = rootGroups(state);
+    const SEP_DIST = 240; // min gap enforced across groups
+    const interGroupSeparation = (alpha: number) => {
+      const k = alpha * 0.6;
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i], b = nodes[j];
+          if (group.get(a.id) === group.get(b.id)) continue;
+          const dx = (b.x ?? 0) - (a.x ?? 0), dy = (b.y ?? 0) - (a.y ?? 0);
+          const d = Math.hypot(dx, dy) || 1;
+          if (d >= SEP_DIST) continue;
+          const push = ((SEP_DIST - d) / d) * k;
+          const fx = dx * push, fy = dy * push;
+          a.x = (a.x ?? 0) - fx; a.y = (a.y ?? 0) - fy;
+          b.x = (b.x ?? 0) + fx; b.y = (b.y ?? 0) + fy;
+        }
+      }
+    };
     const sim = forceSimulation(nodes)
       .force("charge", forceManyBody().strength(-520))
       .force("link", forceLink(links).id((d: any) => d.id).distance(140))
       .force("center", forceCenter(cx, cy))
       .force("collide", forceCollide(70)) // keep nodes (and their labels) from overlapping
       .force("radial", forceRadial<SimNode>((d) => (depth.get(d.id) ?? 0) * ring, cx, cy).strength(0.45))
+      .force("rootSep", interGroupSeparation)
       // Gently pull every node toward the middle so DISCONNECTED components (e.g. an
       // orphan agent cluster) sit close to the rest instead of flying to the corners.
       .force("x", forceX(width / 2).strength(0.08))
