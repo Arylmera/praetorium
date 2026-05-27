@@ -48,7 +48,7 @@ function App() {
   });
   const vaultName = () => { const p = vaultPath().replace(/\\/g, "/").split("/").filter(Boolean).pop(); return p || "no vault"; };
   applyReduceMotion();
-  watchSessions(applyWatch);
+  watchSessions((e) => applyWatch(e, { external: true }));
   refreshMetas();
   setInterval(refreshMetas, 4000);
   return (
