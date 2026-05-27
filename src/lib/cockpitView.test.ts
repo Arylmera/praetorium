@@ -5,6 +5,8 @@ import {
   buildAggregates,
   buildDetail,
   collapseFinishedAgents,
+  collapseByTitle,
+  pruneArchived,
   IDLE_MS,
 } from "./cockpitView";
 import type { GraphState, GraphNode, GraphEdge, ActivityPing } from "./types";
@@ -203,6 +205,65 @@ describe("collapseFinishedAgents", () => {
       [edge("s1:master", "s1:run")],
     );
     expect(collapseFinishedAgents(g)).toBe(g);
+  });
+});
+
+describe("pruneArchived", () => {
+  const live = (sid?: string) => sid === "s1"; // only s1 is live
+  it("drops archived sessions and the project/folder hubs left empty", () => {
+    const g = graphOf(
+      [
+        node("proj:p", { kind: "project" }),
+        node("s1:master", { kind: "master", session: "s1", status: "running" }),
+        node("s2:master", { kind: "master", session: "s2", status: "complete" }),
+        node("/shared", { kind: "folder" }),
+        node("/onlyArchived", { kind: "folder" }),
+      ],
+      [
+        edge("proj:p", "s1:master"),
+        edge("proj:p", "s2:master"),
+        edge("s1:master", "/shared"),
+        edge("s2:master", "/shared"),
+        edge("s2:master", "/onlyArchived"),
+      ],
+    );
+    const out = pruneArchived(g, live);
+    expect(out.nodes.has("s1:master")).toBe(true);
+    expect(out.nodes.has("s2:master")).toBe(false);
+    expect(out.nodes.has("proj:p")).toBe(true);        // still owns the live s1
+    expect(out.nodes.has("/shared")).toBe(true);       // a live session points at it
+    expect(out.nodes.has("/onlyArchived")).toBe(false); // only the archived session touched it
+    expect(out.edges.has("proj:p->s2:master")).toBe(false);
+  });
+});
+
+describe("collapseByTitle", () => {
+  const titleOf = (sid: string) => (sid === "a" || sid === "b" ? "Same prompt" : "Other");
+  it("merges same-project same-title masters into one weighted node", () => {
+    const g = graphOf(
+      [
+        node("a:master", { kind: "master", session: "a", label: "praetorium", status: "running" }),
+        node("b:master", { kind: "master", session: "b", label: "praetorium", status: "running" }),
+        node("a:sub", { kind: "agent", session: "a", status: "running" }),
+      ],
+      [edge("a:master", "a:sub"), edge("b:master", "a:sub")],
+    );
+    const out = collapseByTitle(g, titleOf);
+    const masters = [...out.nodes.values()].filter((n) => n.kind === "master");
+    expect(masters).toHaveLength(1);
+    expect(masters[0].weight).toBe(2);
+    // both masters' edges re-link to the single group node
+    const gid = masters[0].id;
+    expect(out.edges.has(`${gid}->a:sub`)).toBe(true);
+  });
+
+  it("keeps distinct titles as separate masters", () => {
+    const g = graphOf([
+      node("a:master", { kind: "master", session: "a", label: "praetorium", status: "running" }),
+      node("c:master", { kind: "master", session: "c", label: "praetorium", status: "running" }),
+    ]);
+    const out = collapseByTitle(g, titleOf);
+    expect([...out.nodes.values()].filter((n) => n.kind === "master")).toHaveLength(2);
   });
 });
 

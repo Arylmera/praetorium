@@ -1,3 +1,4 @@
+import { normalizePath as norm } from "./path";
 import type { VaultFile } from "./types";
 
 export interface TreeFile { kind: "file"; name: string; rel: string }
@@ -9,8 +10,6 @@ export interface TreeFolder {
   files: TreeFile[];
   count: number;           // total descendant files
 }
-
-const norm = (s: string) => s.replace(/\\/g, "/");
 
 export function buildTree(files: VaultFile[]): TreeFolder {
   const root: TreeFolder = { kind: "folder", name: "", path: "", folders: [], files: [], count: 0 };

@@ -1,15 +1,10 @@
+import { dirname } from "./path";
 import type { ClaudeEvent, GraphEdge, GraphState, WatchEvent } from "./types";
 
 export const MASTER_ID = "__master__";
 
 export function emptyGraph(): GraphState {
   return { nodes: new Map(), edges: new Map(), activity: [] };
-}
-
-function dirname(p: string): string {
-  const norm = p.replace(/\\/g, "/");
-  const i = norm.lastIndexOf("/");
-  return i <= 0 ? norm : norm.slice(0, i);
 }
 
 function ensureMaster(s: GraphState): void {

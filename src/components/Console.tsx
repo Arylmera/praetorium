@@ -6,6 +6,10 @@ import { startRun, stopRun, closeSession, renameSession, isRunning, newLocalSess
 import { appCwd } from "../lib/sessions";
 import { buildRail, type RailEntry } from "../lib/consoleRail";
 import { buildAgentNames } from "../lib/agentNaming";
+import { basename } from "../lib/path";
+import {
+  toolSegs, masterFlow, answerLines, lanes, timeSpan, orderedAgentRefs, subagentSteps,
+} from "../lib/consoleView";
 
 export function Console() {
   const [prompt, setPrompt] = createSignal("");
@@ -41,39 +45,23 @@ export function Console() {
 
   // ---- Run Insights: tool-call timeline + failure radar ----
   const calls = (id: string | null): ToolCall[] => (id ? insights().get(id) ?? [] : []);
-  const activeCalls = () => calls(activeId());
+  const activeCalls = createMemo(() => calls(activeId()));
   const failCount = (id: string | null) => (id ? failures(insights(), id) : 0);
   const failingCalls = () => activeCalls().filter((c) => c.status === "error");
   // Basename for the failure list; keeps long paths from blowing out the banner.
-  const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
+  const baseName = (p: string) => basename(p) || p;
   // First non-empty line of the captured error — CSS handles the horizontal ellipsis.
   const firstLine = (s: string) => s.split("\n").find((l) => l.trim()) ?? s;
 
-  // Ordered swimlanes: master first, then each subagent ref in first-seen order.
-  const lanes = () => {
-    const seen: string[] = [];
-    for (const c of activeCalls()) if (!seen.includes(c.agentRef)) seen.push(c.agentRef);
-    return seen.sort((a, b) => (a === "master" ? -1 : b === "master" ? 1 : 0));
-  };
-  // Time window relative to the session's first call; min 1s so bars stay visible.
-  const span = () => {
-    const cs = activeCalls();
-    if (cs.length === 0) return { t0: 0, ms: 1000 };
-    const t0 = Math.min(...cs.map((c) => c.startMs));
-    const tEnd = Math.max(...cs.map((c) => c.endMs ?? now()));
-    return { t0, ms: Math.max(1000, tEnd - t0) };
-  };
+  const laneOrder = createMemo(() => lanes(activeCalls()));
+  const span = createMemo(() => timeSpan(activeCalls(), now()));
   // Stable, legible names for nested agents (replaces the raw hex toolUseId).
-  // First-seen order across the chat + timeline; use the captured subagent type
-  // when available (disambiguating duplicates, e.g. "Explore 1" / "Explore 2"),
-  // otherwise a plain sequential "agent N".
-  const agentNames = () => {
-    const refs: string[] = [];
-    for (const l of active()?.lines ?? []) if (l.agentRef !== "master" && !refs.includes(l.agentRef)) refs.push(l.agentRef);
-    for (const c of activeCalls()) if (c.agentRef !== "master" && !refs.includes(c.agentRef)) refs.push(c.agentRef);
-    const typeOf = (r: string) => subagentTypes().get(`${activeId()}:${r}`);
-    return buildAgentNames(refs, typeOf);
-  };
+  // First-seen order across the chat + timeline; the captured subagent type
+  // disambiguates duplicates ("Explore 1" / "Explore 2"), else sequential "agent N".
+  const agentNames = createMemo(() => {
+    const refs = orderedAgentRefs(active()?.lines ?? [], activeCalls());
+    return buildAgentNames(refs, (r) => subagentTypes().get(`${activeId()}:${r}`));
+  });
   const agentName = (ref: string) => agentNames().get(ref) ?? ref;
   const laneName = (ref: string) => (ref === "master" ? "master" : agentName(ref));
 
@@ -91,13 +79,7 @@ export function Console() {
   };
 
   const railSubs = (id: string): { ref: string; name: string; steps: number }[] => {
-    const lines = sessions().get(id)?.lines ?? [];
-    const refs: string[] = [];
-    const steps = new Map<string, number>();
-    for (const l of lines) if (l.agentRef !== "master") {
-      if (!refs.includes(l.agentRef)) refs.push(l.agentRef);
-      steps.set(l.agentRef, (steps.get(l.agentRef) ?? 0) + 1);
-    }
+    const { refs, steps } = subagentSteps(sessions().get(id)?.lines ?? []);
     const names = buildAgentNames(refs, (r) => subagentTypes().get(`${id}:${r}`));
     return refs.map((r) => ({ ref: r, name: names.get(r) ?? r, steps: steps.get(r) ?? 0 }));
   };
@@ -162,44 +144,8 @@ export function Console() {
     if (typeof picked === "string") setCwd(picked);
   }
 
-  // Master stream as a flat flow: master lines verbatim, with a one-time jump
-  // marker at the first appearance of each subagent (the subagent's own steps
-  // are shown in its swap view, reachable via the marker or the rail).
-  type FlowItem = { kind: "line"; line: TranscriptLine } | { kind: "marker"; ref: string };
-  const masterFlow = (): FlowItem[] => {
-    const out: FlowItem[] = [];
-    const seenSub = new Set<string>();
-    for (const l of active()?.lines ?? []) {
-      if (l.agentRef === "master") out.push({ kind: "line", line: l });
-      else if (!seenSub.has(l.agentRef)) { seenSub.add(l.agentRef); out.push({ kind: "marker", ref: l.agentRef }); }
-    }
-    return out;
-  };
-
-  // A turn's text is prose lines plus tool placeholders ("[Read path]", "[Bash]")
-  // joined by newlines. Split each line so tool calls render as chips, not prose.
-  type Seg = { tool: true; name: string; arg: string } | { tool: false; text: string };
-  const toolSegs = (text: string): Seg[] =>
-    text.split("\n").map((s) => {
-      const m = s.match(/^\[(\S+)(?:\s+([\s\S]+?))?\]$/);
-      return m ? { tool: true, name: m[1], arg: m[2] ?? "" } : { tool: false, text: s };
-    });
-
-  // For each user question, the last master assistant line of that round is the
-  // "answer" and stays highlighted; the narration before it is muted. The trailing
-  // round's answer is only marked once the run finishes (no mid-flight highlight).
-  const answerLines = () => {
-    const master = (active()?.lines ?? []).filter((l) => l.agentRef === "master");
-    const set = new Set<TranscriptLine>();
-    for (let i = 0; i < master.length; i++) {
-      const l = master[i];
-      if (l.role === "user") continue;
-      const next = master[i + 1];
-      if (!next) { if (!activeRunning()) set.add(l); }
-      else if (next.role === "user") set.add(l);
-    }
-    return set;
-  };
+  const masterItems = createMemo(() => masterFlow(active()?.lines ?? []));
+  const answers = createMemo(() => answerLines(active()?.lines ?? [], activeRunning()));
 
   return (
     <div class="pr-console-grid">
@@ -329,17 +275,17 @@ export function Console() {
               }
             >
               <div data-agent-ref="master">
-                <For each={masterFlow()}>{(item) => (
+                <For each={masterItems()}>{(item) => (
                   <Show
                     when={item.kind === "marker"}
                     fallback={(() => {
                       const l = (item as { line: TranscriptLine }).line;
                       return (
                         <Show when={l.role !== "user"} fallback={<div class="pr-line pr-line-prompt">{l.text}</div>}>
-                          <div class={answerLines().has(l) ? "pr-answer" : undefined}>
+                          <div class={answers().has(l) ? "pr-answer" : undefined}>
                             <For each={toolSegs(l.text)}>{(s) => s.tool
                               ? <div class="pr-line pr-tool-line"><span class="pr-tool"><span class="pr-tool-n">{s.name}</span><Show when={s.arg}><span class="pr-tool-a">{s.arg}</span></Show></span></div>
-                              : <Show when={s.text.trim()}><div class={answerLines().has(l) ? "pr-line pr-answer-text" : "pr-line pr-line-asst"}>{s.text}</div></Show>}</For>
+                              : <Show when={s.text.trim()}><div class={answers().has(l) ? "pr-line pr-answer-text" : "pr-line pr-line-asst"}>{s.text}</div></Show>}</For>
                           </div>
                         </Show>
                       );
@@ -360,12 +306,12 @@ export function Console() {
           <div class={`pr-timeline${timelineOpen() ? " is-open" : ""}`}>
             <button class="pr-timeline-head" type="button" onClick={() => setTimelineOpen((v) => !v)}>
               <span class="pr-timeline-title">TIMELINE</span>
-              <span class="pr-timeline-sub">{activeCalls().length} calls · {lanes().length} {lanes().length === 1 ? "lane" : "lanes"}</span>
+              <span class="pr-timeline-sub">{activeCalls().length} calls · {laneOrder().length} {laneOrder().length === 1 ? "lane" : "lanes"}</span>
             </button>
             <Show when={timelineOpen()}>
               <div class="pr-timeline-body">
                 <div class="pr-timeline-axis"><span>t+0s</span><span>t+{(span().ms / 1000).toFixed(1)}s</span></div>
-                <For each={lanes()}>{(ref) => (
+                <For each={laneOrder()}>{(ref) => (
                   <div class="pr-timeline-lane">
                     <span class="pr-timeline-lane-label" title={laneName(ref)}>{laneName(ref)}</span>
                     <div class="pr-timeline-track">
