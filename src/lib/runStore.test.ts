@@ -26,6 +26,7 @@ import {
   newLocalSession,
   isLocalSession,
   adoptSession,
+  ownedClaudeIds,
   localSessions,
 } from "./runStore";
 
@@ -244,5 +245,24 @@ describe("adoptSession (resume in place)", () => {
       expect.any(String), "go", expect.any(Function),
       { cwd: "/d", model: undefined, resumeId: "claude-r2" },
     );
+  });
+});
+
+describe("ownedClaudeIds (suppress observed mirror)", () => {
+  beforeEach(() => { vi.mocked(runClaude).mockClear(); });
+
+  test("includes the CLI session id captured from systemInit on a local run", async () => {
+    const sid = newLocalSession();
+    h.emit = [{ type: "systemInit", data: { sessionId: "cli-generated-1" } }, RUNCOMPLETE];
+    await startRun(sid, "go");
+    // The local session is keyed by `sid`, but the CLI wrote under "cli-generated-1";
+    // that id must be reported as owned so the watcher's mirror can be hidden.
+    expect(ownedClaudeIds().has("cli-generated-1")).toBe(true);
+    expect(sid).not.toBe("cli-generated-1");
+  });
+
+  test("includes the id of an adopted (resumed) session", () => {
+    adoptSession({ id: "claude-adopted", project: "p", title: "t", lastActivityMs: 0, state: "idle", cwd: "/d" });
+    expect(ownedClaudeIds().has("claude-adopted")).toBe(true);
   });
 });

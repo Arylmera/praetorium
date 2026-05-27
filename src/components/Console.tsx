@@ -2,7 +2,7 @@ import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { sessions, insights, activeId, setActiveId, metas, subagentTypes, type TranscriptLine } from "../lib/sessionStore";
 import { failures, type ToolCall } from "../lib/insightsStore";
-import { startRun, stopRun, closeSession, renameSession, isRunning, newLocalSession, isLocalSession, localSessions, cwdLabel, adoptSession } from "../lib/runStore";
+import { startRun, stopRun, closeSession, renameSession, isRunning, newLocalSession, isLocalSession, localSessions, cwdLabel, adoptSession, ownedClaudeIds } from "../lib/runStore";
 import { appCwd } from "../lib/sessions";
 import { buildRail, type RailEntry } from "../lib/consoleRail";
 import { buildAgentNames } from "../lib/agentNaming";
@@ -21,8 +21,14 @@ export function Console() {
   const [viewRef, setViewRef] = createSignal<string | null>(null);
   let streamRef: HTMLDivElement | undefined;
 
-  // Show only live sessions (in the index, active within ~10 min) + local runs; hide archived.
-  const list = () => [...sessions().entries()].filter(([id]) => isLocalSession(id) || metas().has(id));
+  // Show only live sessions (in the index, active within ~10 min) + local runs;
+  // hide archived, and hide the watcher's "observed" mirror of a run we own
+  // (the CLI writes under its own Claude id while we drive it under a local id).
+  const list = () => {
+    const owned = ownedClaudeIds();
+    return [...sessions().entries()].filter(([id]) =>
+      isLocalSession(id) || (metas().has(id) && !owned.has(id)));
+  };
   const active = () => (activeId() ? sessions().get(activeId()!) : undefined);
   // Disable the input/RUN only when the *active* local session is itself in-flight,
   // so other sessions can keep running concurrently.

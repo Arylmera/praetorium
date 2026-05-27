@@ -41,6 +41,16 @@ export function isLocalSession(id: string | null | undefined): id is string {
   return !!id && localSessions().has(id);
 }
 
+/** Claude session ids currently driven by an owned local session — captured from
+ *  systemInit on a run, or seeded by adoptSession. The `claude` CLI writes its
+ *  transcript under this id, which the file-watcher would otherwise surface as a
+ *  duplicate "observed" mirror of a run we already own. Used to suppress it. */
+export function ownedClaudeIds(): Set<string> {
+  const out = new Set<string>();
+  for (const s of localSessions().values()) if (s.claudeSessionId) out.add(s.claudeSessionId);
+  return out;
+}
+
 export function isRunning(sid: string): boolean {
   return localSessions().get(sid)?.status === "running";
 }
@@ -178,4 +188,4 @@ export function renameSession(sid: string, label: string) {
 }
 
 // Let sessionStore drop file-watch events for sessions we already drive.
-setOwnershipProbe((id) => localSessions().has(id));
+setOwnershipProbe((id) => localSessions().has(id) || ownedClaudeIds().has(id));
