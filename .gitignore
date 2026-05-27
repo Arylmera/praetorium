@@ -1,4 +1,4 @@
 node_modules
 dist
 .claude
-tauri-dev*.log
+tauri-dev*.log.superpowers/
