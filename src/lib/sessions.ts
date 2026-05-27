@@ -10,3 +10,7 @@ export async function watchSessions(onEvent: (e: WatchEvent) => void): Promise<v
   ch.onmessage = onEvent;
   await invoke("watch_sessions", { onEvent: ch });
 }
+
+export async function appCwd(): Promise<string | undefined> {
+  try { return (await invoke<string | null>("app_cwd")) ?? undefined; } catch { return undefined; }
+}
