@@ -14,6 +14,7 @@ pub struct SessionMeta {
     pub title: String,
     pub last_activity_ms: u64,
     pub state: String,
+    pub cwd: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -100,18 +101,24 @@ pub fn list_live_sessions() -> Result<Vec<SessionMeta>, String> {
             if age > 10 * LIVE_WINDOW_MS { continue; }
             let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
             let content = std::fs::read_to_string(&path).unwrap_or_default();
-            let cwd_basename = content.lines().find_map(line_cwd).map(|c| basename(&c));
+            let cwd_full = content.lines().find_map(line_cwd);
+            let cwd_basename = cwd_full.as_deref().map(basename);
             let friendly_project = cwd_basename.unwrap_or_else(|| project.clone());
             let title = content.lines().find_map(|l| parse_transcript_line(l).into_iter()
                     .find_map(|e| if let SessionEvent::Turn { role, text } = e { if role == "user" { Some(text) } else { None } } else { None }))
                 .map(|t| t.chars().take(80).collect::<String>())
                 .unwrap_or_else(|| id.clone());
             let state = if age <= LIVE_WINDOW_MS { "live" } else { "idle" }.to_string();
-            out.push(SessionMeta { id, project: friendly_project, title, last_activity_ms: mtime, state });
+            out.push(SessionMeta { id, project: friendly_project, title, last_activity_ms: mtime, state, cwd: cwd_full });
         }
     }
     out.sort_by(|a, b| b.last_activity_ms.cmp(&a.last_activity_ms));
     Ok(out)
+}
+
+#[tauri::command]
+pub fn app_cwd() -> Option<String> {
+    std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())
 }
 
 #[derive(Default)]
