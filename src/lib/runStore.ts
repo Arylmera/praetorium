@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import { basename } from "./path";
 import { runClaude, stopClaude } from "./claude";
 import { applyWatch, ensureSession, removeSession, setActiveId, activeId, setOwnershipProbe } from "./sessionStore";
 import type { ClaudeEvent, WatchEvent, SessionEvent, LiveSessionMeta } from "./types";
@@ -94,9 +95,7 @@ export function adoptSession(meta: LiveSessionMeta): void {
  *  or "local run" when no cwd is set. Tolerates trailing and Windows separators. */
 export function cwdLabel(cwd?: string): string {
   if (!cwd) return LOCAL_PROJECT;
-  const trimmed = cwd.replace(/[/\\]+$/, "");
-  const base = trimmed.split(/[/\\]/).pop();
-  return base || LOCAL_PROJECT;
+  return basename(cwd) || LOCAL_PROJECT;
 }
 
 /** Parent-repo label for a git-worktree cwd (.../<repo>/.claude/worktrees/<name>).
