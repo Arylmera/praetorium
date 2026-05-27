@@ -1110,7 +1110,10 @@ option { background: var(--panel); color: var(--bone); }
   padding: var(--space-1) var(--space-2);
   font-family: var(--font-mono); font-size: var(--t-meta, 11px);
   text-transform: uppercase; letter-spacing: .05em; color: var(--gull-2);
+  cursor: pointer; user-select: none; transition: color var(--dur-snap);
 }
+.pr-session-group-head:hover { color: var(--bone); }
+.pr-session-group-dir { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-session-group-repo { color: var(--gull-2); opacity: .7; }
 .pr-session-sub {
   display: flex; align-items: center; gap: var(--space-2);

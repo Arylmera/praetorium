@@ -105,19 +105,19 @@ export function reduceWatch(prev: GraphState, e: WatchEvent): GraphState {
   if (!s.nodes.has(masterId)) {
     s.nodes.set(masterId, { id: masterId, kind: "master", label: e.data.project || sessionId.slice(0, 6), status: "running", session: sessionId });
   }
-  const projectId = `proj:${e.data.project}`;
-  if (!s.nodes.has(projectId)) {
-    s.nodes.set(projectId, { id: projectId, kind: "project", label: e.data.project, status: "running" });
+  // Worktree sessions hang directly off their parent repo node — the worktree
+  // codename (e.g. "kind-bartik-d1c4fb") is NOT given its own node, since the
+  // master already renders the session's prompt title and the codename would
+  // just be a redundant hop. The master keeps the worktree name as its internal
+  // `label` (used for title-grouping); the codename still shows in the detail
+  // panel. Non-worktree sessions hang off a project node keyed by project name.
+  const isWorktree = !!e.data.repo && e.data.repo !== e.data.project;
+  const parentId = isWorktree ? `proj:${e.data.repo}` : `proj:${e.data.project}`;
+  const parentLabel = isWorktree ? e.data.repo! : e.data.project;
+  if (!s.nodes.has(parentId)) {
+    s.nodes.set(parentId, { id: parentId, kind: "project", label: parentLabel, status: "running" });
   }
-  // Worktree sessions nest one level deeper: the parent repo node owns the
-  // worktree (project) node, which owns the master. All worktrees of a repo
-  // thus collapse under a single repo node instead of floating as siblings.
-  if (e.data.repo && e.data.repo !== e.data.project) {
-    const repoId = `proj:${e.data.repo}`;
-    if (!s.nodes.has(repoId)) s.nodes.set(repoId, { id: repoId, kind: "project", label: e.data.repo, status: "running" });
-    addEdge(s, repoId, projectId);
-  }
-  addEdge(s, projectId, masterId);
+  addEdge(s, parentId, masterId);
   const ownerId = agentRef === "master" ? masterId : `${sessionId}:${agentRef}`;
   switch (event.kind) {
     case "subagentSpawn": {

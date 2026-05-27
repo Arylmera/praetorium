@@ -1,4 +1,4 @@
-import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createSignal, createMemo, onCleanup, onMount } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { sessions, insights, activeId, setActiveId, metas, subagentTypes, type TranscriptLine } from "../lib/sessionStore";
 import { failures, type ToolCall } from "../lib/insightsStore";
@@ -120,6 +120,28 @@ export function Console() {
     });
     return buildRail(entries, appDir());
   };
+
+  // ---- Collapsible folder state for the rail (keyed by each group's unique dir) ----
+  // Default open: the first group + whichever group holds the active session.
+  const [openGroups, setOpenGroups] = createSignal<Set<string>>(new Set());
+  const defaultOpen = createMemo(() => {
+    const g = railGroups();
+    if (!g.length) return new Set<string>();
+    const next = new Set<string>([g[0].dir]);
+    const aid = activeId();
+    for (const grp of g) if (grp.sessions.some((e) => e.id === aid)) next.add(grp.dir);
+    return next;
+  });
+  const isGroupOpen = (key: string) => (openGroups().size ? openGroups() : defaultOpen()).has(key);
+  function toggleGroup(key: string) {
+    setOpenGroups((prev) => {
+      const base = prev.size ? prev : defaultOpen();
+      const next = new Set(base);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
   async function submit(e: Event) {
     e.preventDefault();
     const p = prompt();
@@ -192,60 +214,64 @@ export function Console() {
         <div class="pr-sessions-list">
           <For each={railGroups()}>{(g) => (
             <div class="pr-session-group">
-              <div class="pr-session-group-head">
+              <div class="pr-session-group-head" onClick={() => toggleGroup(g.dir)} title={g.dir || g.label}>
+                <span class="pr-folder-chevron">{isGroupOpen(g.dir) ? "▾" : "▸"}</span>
                 <span class="pr-session-group-dir">{g.label}</span>
                 <Show when={g.repo}><span class="pr-session-group-repo">{g.repo}</span></Show>
+                <span class="pr-folder-count">{g.sessions.length}</span>
               </div>
-              <For each={g.sessions}>{(e) => {
-                const bulletCls = () => {
-                  if (e.failCount > 0) return " is-failed";
-                  return e.status ? ` is-${e.status}` : "";
-                };
-                return (
-                  <>
-                    <div class={`pr-session${e.id === activeId() && viewRef() === null ? " is-active" : ""}`}
-                         onClick={() => { setActiveId(e.id); setViewRef(null); }} title={e.id}>
-                      <span class={`pr-session-bullet${bulletCls()}`} />
-                      <Show when={renaming() === e.id}
-                        fallback={
-                          <span class="pr-session-title"
-                                onDblClick={(ev) => { ev.stopPropagation(); if (e.owned) setRenaming(e.id); }}>
-                            {e.title}
-                          </span>
-                        }>
-                        <input class="pr-session-rename" autofocus value={sess(e.id)?.label ?? ""}
-                          onClick={(ev) => ev.stopPropagation()}
-                          onBlur={(ev) => { renameSession(e.id, ev.currentTarget.value); setRenaming(null); }}
-                          onKeyDown={(ev) => {
-                            if (ev.key === "Enter") { renameSession(e.id, ev.currentTarget.value); setRenaming(null); }
-                            else if (ev.key === "Escape") setRenaming(null);
-                          }} />
-                      </Show>
-                      <span class="pr-session-time">
-                        {e.observed ? "" : e.status === "running" ? "live" : "now"}
-                      </span>
-                      <Show when={e.owned && e.status === "running"}>
-                        <button class="pr-session-stop" type="button" title="stop run"
-                          onClick={(ev) => { ev.stopPropagation(); void stopRun(e.id); }}>■</button>
-                      </Show>
-                      <Show when={e.owned}>
-                        <button class="pr-session-close" type="button" title="close session"
-                          onClick={(ev) => { ev.stopPropagation(); void closeSession(e.id); }}>×</button>
-                      </Show>
-                      <Show when={e.observed}><span class="pr-session-observed">observed</span></Show>
-                    </div>
-                    <For each={e.subagents}>{(sub) => (
-                      <div class={`pr-session-sub${e.id === activeId() && viewRef() === sub.ref ? " is-active" : ""}`}
-                           onClick={() => { setActiveId(e.id); setViewRef(sub.ref); }}
-                           title={`${sub.name} · ${sub.steps} steps`}>
-                        <span class="pr-session-sub-arrow">↳</span>
-                        <span class="pr-session-sub-name">{sub.name}</span>
-                        <span class="pr-session-sub-steps">{sub.steps}</span>
+              <Show when={isGroupOpen(g.dir)}>
+                <For each={g.sessions}>{(e) => {
+                  const bulletCls = () => {
+                    if (e.failCount > 0) return " is-failed";
+                    return e.status ? ` is-${e.status}` : "";
+                  };
+                  return (
+                    <>
+                      <div class={`pr-session${e.id === activeId() && viewRef() === null ? " is-active" : ""}`}
+                           onClick={() => { setActiveId(e.id); setViewRef(null); }} title={e.id}>
+                        <span class={`pr-session-bullet${bulletCls()}`} />
+                        <Show when={renaming() === e.id}
+                          fallback={
+                            <span class="pr-session-title"
+                                  onDblClick={(ev) => { ev.stopPropagation(); if (e.owned) setRenaming(e.id); }}>
+                              {e.title}
+                            </span>
+                          }>
+                          <input class="pr-session-rename" autofocus value={sess(e.id)?.label ?? ""}
+                            onClick={(ev) => ev.stopPropagation()}
+                            onBlur={(ev) => { renameSession(e.id, ev.currentTarget.value); setRenaming(null); }}
+                            onKeyDown={(ev) => {
+                              if (ev.key === "Enter") { renameSession(e.id, ev.currentTarget.value); setRenaming(null); }
+                              else if (ev.key === "Escape") setRenaming(null);
+                            }} />
+                        </Show>
+                        <span class="pr-session-time">
+                          {e.observed ? "" : e.status === "running" ? "live" : "now"}
+                        </span>
+                        <Show when={e.owned && e.status === "running"}>
+                          <button class="pr-session-stop" type="button" title="stop run"
+                            onClick={(ev) => { ev.stopPropagation(); void stopRun(e.id); }}>■</button>
+                        </Show>
+                        <Show when={e.owned}>
+                          <button class="pr-session-close" type="button" title="close session"
+                            onClick={(ev) => { ev.stopPropagation(); void closeSession(e.id); }}>×</button>
+                        </Show>
+                        <Show when={e.observed}><span class="pr-session-observed">observed</span></Show>
                       </div>
-                    )}</For>
-                  </>
-                );
-              }}</For>
+                      <For each={e.subagents}>{(sub) => (
+                        <div class={`pr-session-sub${e.id === activeId() && viewRef() === sub.ref ? " is-active" : ""}`}
+                             onClick={() => { setActiveId(e.id); setViewRef(sub.ref); }}
+                             title={`${sub.name} · ${sub.steps} steps`}>
+                          <span class="pr-session-sub-arrow">↳</span>
+                          <span class="pr-session-sub-name">{sub.name}</span>
+                          <span class="pr-session-sub-steps">{sub.steps}</span>
+                        </div>
+                      )}</For>
+                    </>
+                  );
+                }}</For>
+              </Show>
             </div>
           )}</For>
         </div>
