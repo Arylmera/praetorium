@@ -25,4 +25,4 @@ All design tokens and the full component stylesheet live in [src/themes/tokens.c
 - Dark: `forge`, `forest`, `dusk`, `ocean`, `matrix`, `rose`, `bb-dark`, `cyber-dark`, `dim` (+ bare `.td-root` = base dark)
 - Special (swap display fonts + drive `components/AmbientCanvas.tsx`): `terminal`, `cockpit`, `grimdark`
 
-**Component vocabulary:** all UI classes are prefixed `pr-*` (e.g. `.pr-topbar`, `.pr-card`, `.pr-console-grid`, `.pr-explorer`, `.pr-settings`, `.pr-statusbar`). Fonts are vendored woff2 under `src/themes/fonts/` (no CDN). Motion is gated by `[data-reduce-motion="1"]`.
+**Component vocabulary:** all UI classes are prefixed `pr-*` (e.g. `.pr-topbar`, `.pr-card`, `.pr-console-grid`, `.pr-explorer`, `.pr-settings`, `.pr-statusbar`; console rail: `.pr-session-group`, `.pr-session-sub`, `.pr-session-observed`, `.pr-spawn-marker`, `.pr-crumb-loc`). Fonts are vendored woff2 under `src/themes/fonts/` (no CDN). Motion is gated by `[data-reduce-motion="1"]`.

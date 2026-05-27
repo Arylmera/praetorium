@@ -25,6 +25,9 @@ import { watchSessions } from "./lib/sessions";
 
 function App() {
   const [paletteOpen, setPaletteOpen] = createSignal(false);
+  // Brand version label: build-time package version, overridden at runtime by the
+  // authoritative tauri.conf version (getVersion) when running inside Tauri.
+  const [appVersion, setAppVersion] = createSignal(__APP_VERSION__);
   // Global Ctrl/Cmd+K toggles the command palette.
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -43,12 +46,16 @@ function App() {
     import("@tauri-apps/api/window")
       .then((m) => m.getCurrentWindow().setDecorations(false))
       .catch(() => { /* not in a Tauri window */ });
+    import("@tauri-apps/api/app")
+      .then((m) => m.getVersion())
+      .then((v) => setAppVersion(v))
+      .catch(() => { /* not in a Tauri window */ });
     // Sync native vibrancy with the persisted glass setting on launch.
     applyGlass();
   });
   const vaultName = () => { const p = vaultPath().replace(/\\/g, "/").split("/").filter(Boolean).pop(); return p || "no vault"; };
   applyReduceMotion();
-  watchSessions(applyWatch);
+  watchSessions((e) => applyWatch(e, { external: true }));
   refreshMetas();
   setInterval(refreshMetas, 4000);
   return (
@@ -71,7 +78,7 @@ function App() {
         <ViewSwitcher />
 
         <div class="pr-topbar-actions">
-          <span class="pr-brand-sub">v0.4-dev</span>
+          <span class="pr-brand-sub">v{appVersion()}</span>
           <WindowControls />
         </div>
       </header>

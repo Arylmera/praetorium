@@ -24,6 +24,9 @@ import {
   renameSession,
   isRunning,
   newLocalSession,
+  isLocalSession,
+  adoptSession,
+  ownedClaudeIds,
   localSessions,
 } from "./runStore";
 
@@ -208,5 +211,58 @@ describe("closeSession / renameSession", () => {
     expect(localSessions().get(sid)?.label).toBe("my run");
     renameSession(sid, "");
     expect(localSessions().get(sid)?.label).toBeUndefined();
+  });
+});
+
+describe("isLocalSession (membership)", () => {
+  test("true once a session is in the map, regardless of id shape", () => {
+    adoptSession({ id: "claude-xyz", project: "p", title: "t", lastActivityMs: 0, state: "idle", cwd: "/p" });
+    expect(isLocalSession("claude-xyz")).toBe(true);
+  });
+  test("false for an unknown id", () => {
+    expect(isLocalSession("nope-not-here")).toBe(false);
+  });
+  test("false for null/undefined", () => {
+    expect(isLocalSession(null)).toBe(false);
+    expect(isLocalSession(undefined)).toBe(false);
+  });
+});
+
+describe("adoptSession (resume in place)", () => {
+  beforeEach(() => { vi.mocked(runClaude).mockClear(); h.emit = [RUNCOMPLETE]; });
+
+  test("adds an owned entry carrying claudeSessionId and cwd", () => {
+    adoptSession({ id: "claude-r", project: "p", title: "t", lastActivityMs: 0, state: "idle", cwd: "/work/dir" });
+    const s = localSessions().get("claude-r");
+    expect(s?.claudeSessionId).toBe("claude-r");
+    expect(s?.cwd).toBe("/work/dir");
+  });
+
+  test("a subsequent run resumes via the adopted claudeSessionId", async () => {
+    adoptSession({ id: "claude-r2", project: "p", title: "t", lastActivityMs: 0, state: "idle", cwd: "/d" });
+    await startRun("claude-r2", "go");
+    expect(runClaude).toHaveBeenCalledWith(
+      expect.any(String), "go", expect.any(Function),
+      { cwd: "/d", model: undefined, resumeId: "claude-r2" },
+    );
+  });
+});
+
+describe("ownedClaudeIds (suppress observed mirror)", () => {
+  beforeEach(() => { vi.mocked(runClaude).mockClear(); });
+
+  test("includes the CLI session id captured from systemInit on a local run", async () => {
+    const sid = newLocalSession();
+    h.emit = [{ type: "systemInit", data: { sessionId: "cli-generated-1" } }, RUNCOMPLETE];
+    await startRun(sid, "go");
+    // The local session is keyed by `sid`, but the CLI wrote under "cli-generated-1";
+    // that id must be reported as owned so the watcher's mirror can be hidden.
+    expect(ownedClaudeIds().has("cli-generated-1")).toBe(true);
+    expect(sid).not.toBe("cli-generated-1");
+  });
+
+  test("includes the id of an adopted (resumed) session", () => {
+    adoptSession({ id: "claude-adopted", project: "p", title: "t", lastActivityMs: 0, state: "idle", cwd: "/d" });
+    expect(ownedClaudeIds().has("claude-adopted")).toBe(true);
   });
 });

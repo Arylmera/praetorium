@@ -19,6 +19,11 @@ const [subagentTypes, setSubagentTypes] = createSignal<Map<string, string>>(new 
 
 export { sessions, graph, insights, activeId, setActiveId, metas, subagentTypes };
 
+// Injected by runStore: reports whether a session id is locally driven (owned).
+// Used to drop duplicate file-watch events for sessions we already stream.
+let isOwned: (id: string) => boolean = () => false;
+export function setOwnershipProbe(fn: (id: string) => boolean): void { isOwned = fn; }
+
 /** Wipe one session from every live store (transcript, insights, subagent names,
  *  constellation graph). Used by the Console's NEW button to reset the local run. */
 export function clearSession(id: string): void {
@@ -57,8 +62,9 @@ export async function refreshMetas(): Promise<void> {
   setMetas(new Map(list.map((m) => [m.id, m])));
 }
 
-export function applyWatch(e: WatchEvent) {
+export function applyWatch(e: WatchEvent, opts?: { external?: boolean }) {
   if (e.type !== "session") return;
+  if (opts?.external && isOwned(e.data.sessionId)) return; // owned run is source of truth
   const { sessionId, project, event, agentRef } = e.data;
   setSessions((prev) => {
     const next = new Map(prev);
