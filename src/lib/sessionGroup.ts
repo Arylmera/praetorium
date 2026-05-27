@@ -7,6 +7,19 @@ export function groupByLocation(sessions: SessionMeta[]): [string, SessionMeta[]
   return [...m.entries()].sort((a, b) => b[1][0].mtimeMs - a[1][0].mtimeMs);
 }
 
+/** Group items into [key, items][] preserving first-seen order of both the keys
+ *  and the items within each key. Used for the Console's live-session rail, where
+ *  rows have no mtime to sort on and we want a stable list order. */
+export function groupBy<T>(items: T[], keyOf: (item: T) => string): [string, T[]][] {
+  const m = new Map<string, T[]>();
+  for (const it of items) {
+    const k = keyOf(it);
+    const arr = m.get(k);
+    if (arr) arr.push(it); else m.set(k, [it]);
+  }
+  return [...m.entries()];
+}
+
 export function relativeTime(ms: number, now: number = Date.now()): string {
   const d = Math.max(0, now - ms);
   if (d < 60_000) return "just now";

@@ -1,8 +1,9 @@
-import { For, Show, createSignal, onCleanup } from "solid-js";
+import { For, Show, createSignal, createMemo, onCleanup } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { sessions, insights, activeId, setActiveId, metas, subagentTypes, type TranscriptLine } from "../lib/sessionStore";
 import { failures, type ToolCall } from "../lib/insightsStore";
-import { startRun, stopRun, closeSession, renameSession, isRunning, newLocalSession, isLocalSession, localSessions, cwdLabel } from "../lib/runStore";
+import { startRun, stopRun, closeSession, renameSession, isRunning, newLocalSession, isLocalSession, localSessions, cwdLabel, repoLabel } from "../lib/runStore";
+import { groupBy } from "../lib/sessionGroup";
 
 export function Console() {
   const [prompt, setPrompt] = createSignal("");
@@ -26,6 +27,35 @@ export function Console() {
   const activeSess = () => { const id = activeId(); return isLocalSession(id) ? sess(id) : undefined; };
   const canContinue = () => !!activeSess()?.claudeSessionId;
   const locked = () => { const s = activeSess(); return !!(s && (s.cwd !== undefined || s.model !== undefined) && s.status !== "idle"); };
+
+  // ---- Group the live rail by working directory ----
+  // Worktree runs fold under their parent repo (repoLabel); plain runs use the
+  // cwd basename; local sessions with no cwd yet land in the "local run" group.
+  type LiveItem = [string, { project?: string; repo?: string }];
+  const groupKey = ([id, s]: LiveItem): string => {
+    if (isLocalSession(id)) { const c = sess(id)?.cwd; return repoLabel(c) ?? cwdLabel(c); }
+    return s.repo ?? s.project ?? metas().get(id)?.project ?? cwdLabel(undefined);
+  };
+  const groups = createMemo(() => groupBy(list(), groupKey));
+  const [openGroups, setOpenGroups] = createSignal<Set<string>>(new Set());
+  // Default open: the first group + whichever group holds the active session.
+  const defaultOpen = createMemo(() => {
+    const g = groups();
+    if (!g.length) return new Set<string>();
+    const next = new Set<string>([g[0][0]]);
+    const aid = activeId();
+    for (const [key, items] of g) if (items.some(([id]) => id === aid)) next.add(key);
+    return next;
+  });
+  const isGroupOpen = (key: string) => (openGroups().size ? openGroups() : defaultOpen()).has(key);
+  function toggleGroup(key: string) {
+    setOpenGroups((prev) => {
+      const base = prev.size ? prev : defaultOpen();
+      const next = new Set(base);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
 
   // ---- Run Insights: tool-call timeline + failure radar ----
   const calls = (id: string | null): ToolCall[] => (id ? insights().get(id) ?? [] : []);
@@ -172,8 +202,16 @@ export function Console() {
             title="start a new local session">+ NEW</button>
         </div>
         <div class="pr-sessions-list">
-          <For each={list()}>{([id, s]) => {
-            const m = () => metas().get(id);
+          <For each={groups()}>{([key, items]) => (
+            <div class="pr-session-group">
+              <div class="pr-session-group-head" onClick={() => toggleGroup(key)} title={key}>
+                <span class="pr-folder-chevron">{isGroupOpen(key) ? "▾" : "▸"}</span>
+                <span class="pr-session-group-name">{key}</span>
+                <span class="pr-folder-count">{items.length}</span>
+              </div>
+              <Show when={isGroupOpen(key)}>
+                <For each={items}>{([id, s]) => {
+                  const m = () => metas().get(id);
             const status = () => sess(id)?.status;
             const bulletCls = () => {
               if (failCount(id) > 0) return " is-failed";
@@ -217,7 +255,10 @@ export function Console() {
                 </Show>
               </div>
             );
-          }}</For>
+                }}</For>
+              </Show>
+            </div>
+          )}</For>
         </div>
       </aside>
 

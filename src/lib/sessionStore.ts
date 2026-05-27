@@ -7,7 +7,7 @@ import { listLiveSessions } from "./sessions";
 
 export type TranscriptLine = { agentRef: string; role: string; text: string };
 
-const [sessions, setSessions] = createSignal<Map<string, { project?: string; lines: TranscriptLine[] }>>(new Map());
+const [sessions, setSessions] = createSignal<Map<string, { project?: string; repo?: string; lines: TranscriptLine[] }>>(new Map());
 const [graph, setGraph] = createSignal<GraphState>(emptyGraph());
 const [insights, setInsights] = createSignal<InsightsState>(emptyInsights());
 // Default focus is the synthetic local console so its input shows on load and
@@ -59,11 +59,12 @@ export async function refreshMetas(): Promise<void> {
 
 export function applyWatch(e: WatchEvent) {
   if (e.type !== "session") return;
-  const { sessionId, project, event, agentRef } = e.data;
+  const { sessionId, project, repo, event, agentRef } = e.data;
   setSessions((prev) => {
     const next = new Map(prev);
-    const cur = next.get(sessionId) ?? { project, lines: [] };
+    const cur = next.get(sessionId) ?? { project, repo: repo ?? undefined, lines: [] };
     cur.project = cur.project ?? project;
+    cur.repo = cur.repo ?? repo ?? undefined;
     if (event.kind === "turn") {
       cur.lines = [...cur.lines.slice(-499), { agentRef, role: event.data.role, text: event.data.text }];
     }

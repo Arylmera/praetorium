@@ -304,6 +304,13 @@ body { min-height: 100vh; background: var(--bg); color: var(--bone); font: var(-
 .pr-session-time { font: 500 10px var(--font-mono); color: var(--gull-2); font-variant-numeric: tabular-nums; }
 .pr-session-project { grid-column: 2 / -1; font: 400 10.5px var(--font-mono); color: var(--gull-2); text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
 
+/* live rail grouped by working directory */
+.pr-session-group { margin-bottom: 2px; }
+.pr-session-group-head { display: flex; align-items: center; gap: 6px; padding: 5px 14px; cursor: pointer; user-select: none; font: 500 10.5px var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--gull); transition: color var(--dur-snap); }
+.pr-session-group-head:hover { color: var(--bone); }
+.pr-session-group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-session-group .pr-session { padding-left: 26px; }
+
 .pr-console-right { display: flex; flex-direction: column; min-height: 0; }
 .pr-stream-head { padding: 12px 18px; border-bottom: 1px solid var(--iron-border); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .pr-stream-crumb { font: var(--t-mono); color: var(--gull); }
