@@ -1,9 +1,11 @@
-import { For, Show, createSignal, createMemo, onCleanup } from "solid-js";
+import { For, Show, createSignal, createMemo, onCleanup, onMount } from "solid-js";
 import { open } from "@tauri-apps/plugin-dialog";
 import { sessions, insights, activeId, setActiveId, metas, subagentTypes, type TranscriptLine } from "../lib/sessionStore";
 import { failures, type ToolCall } from "../lib/insightsStore";
-import { startRun, stopRun, closeSession, renameSession, isRunning, newLocalSession, isLocalSession, localSessions, cwdLabel, repoLabel } from "../lib/runStore";
-import { groupBy } from "../lib/sessionGroup";
+import { startRun, stopRun, closeSession, renameSession, isRunning, newLocalSession, isLocalSession, localSessions, cwdLabel, adoptSession, ownedClaudeIds } from "../lib/runStore";
+import { appCwd } from "../lib/sessions";
+import { buildRail, type RailEntry } from "../lib/consoleRail";
+import { buildAgentNames } from "../lib/agentNaming";
 
 export function Console() {
   const [prompt, setPrompt] = createSignal("");
@@ -14,10 +16,19 @@ export function Console() {
   const [now, setNow] = createSignal(Date.now());
   const tick = setInterval(() => setNow(Date.now()), 1000);
   onCleanup(() => clearInterval(tick));
+  const [appDir, setAppDir] = createSignal<string | undefined>(undefined);
+  onMount(async () => setAppDir(await appCwd()));
+  const [viewRef, setViewRef] = createSignal<string | null>(null);
   let streamRef: HTMLDivElement | undefined;
 
-  // Show only live sessions (in the index, active within ~10 min) + local runs; hide archived.
-  const list = () => [...sessions().entries()].filter(([id]) => isLocalSession(id) || metas().has(id));
+  // Show only live sessions (in the index, active within ~10 min) + local runs;
+  // hide archived, and hide the watcher's "observed" mirror of a run we own
+  // (the CLI writes under its own Claude id while we drive it under a local id).
+  const list = () => {
+    const owned = ownedClaudeIds();
+    return [...sessions().entries()].filter(([id]) =>
+      isLocalSession(id) || (metas().has(id) && !owned.has(id)));
+  };
   const active = () => (activeId() ? sessions().get(activeId()!) : undefined);
   // Disable the input/RUN only when the *active* local session is itself in-flight,
   // so other sessions can keep running concurrently.
@@ -27,35 +38,6 @@ export function Console() {
   const activeSess = () => { const id = activeId(); return isLocalSession(id) ? sess(id) : undefined; };
   const canContinue = () => !!activeSess()?.claudeSessionId;
   const locked = () => { const s = activeSess(); return !!(s && (s.cwd !== undefined || s.model !== undefined) && s.status !== "idle"); };
-
-  // ---- Group the live rail by working directory ----
-  // Worktree runs fold under their parent repo (repoLabel); plain runs use the
-  // cwd basename; local sessions with no cwd yet land in the "local run" group.
-  type LiveItem = [string, { project?: string; repo?: string }];
-  const groupKey = ([id, s]: LiveItem): string => {
-    if (isLocalSession(id)) { const c = sess(id)?.cwd; return repoLabel(c) ?? cwdLabel(c); }
-    return s.repo ?? s.project ?? metas().get(id)?.project ?? cwdLabel(undefined);
-  };
-  const groups = createMemo(() => groupBy(list(), groupKey));
-  const [openGroups, setOpenGroups] = createSignal<Set<string>>(new Set());
-  // Default open: the first group + whichever group holds the active session.
-  const defaultOpen = createMemo(() => {
-    const g = groups();
-    if (!g.length) return new Set<string>();
-    const next = new Set<string>([g[0][0]]);
-    const aid = activeId();
-    for (const [key, items] of g) if (items.some(([id]) => id === aid)) next.add(key);
-    return next;
-  });
-  const isGroupOpen = (key: string) => (openGroups().size ? openGroups() : defaultOpen()).has(key);
-  function toggleGroup(key: string) {
-    setOpenGroups((prev) => {
-      const base = prev.size ? prev : defaultOpen();
-      const next = new Set(base);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-  }
 
   // ---- Run Insights: tool-call timeline + failure radar ----
   const calls = (id: string | null): ToolCall[] => (id ? insights().get(id) ?? [] : []);
@@ -86,27 +68,11 @@ export function Console() {
   // when available (disambiguating duplicates, e.g. "Explore 1" / "Explore 2"),
   // otherwise a plain sequential "agent N".
   const agentNames = () => {
-    const map = new Map<string, string>();
     const refs: string[] = [];
-    const push = (r: string) => { if (r !== "master" && !refs.includes(r)) refs.push(r); };
-    for (const l of active()?.lines ?? []) push(l.agentRef);
-    for (const c of activeCalls()) push(c.agentRef);
+    for (const l of active()?.lines ?? []) if (l.agentRef !== "master" && !refs.includes(l.agentRef)) refs.push(l.agentRef);
+    for (const c of activeCalls()) if (c.agentRef !== "master" && !refs.includes(c.agentRef)) refs.push(c.agentRef);
     const typeOf = (r: string) => subagentTypes().get(`${activeId()}:${r}`);
-    const typeTotals = new Map<string, number>();
-    for (const r of refs) { const t = typeOf(r); if (t) typeTotals.set(t, (typeTotals.get(t) ?? 0) + 1); }
-    const typeSeen = new Map<string, number>();
-    let generic = 0;
-    for (const r of refs) {
-      const t = typeOf(r);
-      if (t) {
-        const n = (typeSeen.get(t) ?? 0) + 1;
-        typeSeen.set(t, n);
-        map.set(r, (typeTotals.get(t) ?? 1) > 1 ? `${t} ${n}` : t);
-      } else {
-        map.set(r, `agent ${++generic}`);
-      }
-    }
-    return map;
+    return buildAgentNames(refs, typeOf);
   };
   const agentName = (ref: string) => agentNames().get(ref) ?? ref;
   const laneName = (ref: string) => (ref === "master" ? "master" : agentName(ref));
@@ -123,16 +89,71 @@ export function Console() {
     if (!id) return "";
     return metas().get(id)?.title ?? sessions().get(id)?.project ?? id.slice(0, 8);
   };
+
+  const railSubs = (id: string): { ref: string; name: string; steps: number }[] => {
+    const lines = sessions().get(id)?.lines ?? [];
+    const refs: string[] = [];
+    const steps = new Map<string, number>();
+    for (const l of lines) if (l.agentRef !== "master") {
+      if (!refs.includes(l.agentRef)) refs.push(l.agentRef);
+      steps.set(l.agentRef, (steps.get(l.agentRef) ?? 0) + 1);
+    }
+    const names = buildAgentNames(refs, (r) => subagentTypes().get(`${id}:${r}`));
+    return refs.map((r) => ({ ref: r, name: names.get(r) ?? r, steps: steps.get(r) ?? 0 }));
+  };
+
+  const railGroups = () => {
+    const entries: RailEntry[] = list().map(([id, s]) => {
+      const ls = sess(id);
+      const m = metas().get(id);
+      return {
+        id,
+        title: ls?.label ?? m?.title ?? s.project ?? id.slice(0, 8),
+        owned: isLocalSession(id),
+        observed: !isLocalSession(id) && metas().has(id),
+        status: ls?.status,
+        failCount: failCount(id),
+        lastActivityMs: m?.lastActivityMs ?? (isLocalSession(id) ? now() : 0),
+        cwd: ls?.cwd ?? m?.cwd,
+        subagents: railSubs(id),
+      };
+    });
+    return buildRail(entries, appDir());
+  };
+
+  // ---- Collapsible folder state for the rail (keyed by each group's unique dir) ----
+  // Default open: the first group + whichever group holds the active session.
+  const [openGroups, setOpenGroups] = createSignal<Set<string>>(new Set());
+  const defaultOpen = createMemo(() => {
+    const g = railGroups();
+    if (!g.length) return new Set<string>();
+    const next = new Set<string>([g[0].dir]);
+    const aid = activeId();
+    for (const grp of g) if (grp.sessions.some((e) => e.id === aid)) next.add(grp.dir);
+    return next;
+  });
+  const isGroupOpen = (key: string) => (openGroups().size ? openGroups() : defaultOpen()).has(key);
+  function toggleGroup(key: string) {
+    setOpenGroups((prev) => {
+      const base = prev.size ? prev : defaultOpen();
+      const next = new Set(base);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
   async function submit(e: Event) {
     e.preventDefault();
     const p = prompt();
     if (!p.trim()) return;
     setPrompt("");
     const m = model();
-    // Launch into the active local session, or spin up a fresh one if the
-    // current selection is an observed (non-local) session or none.
     const id = activeId();
-    const sid = isLocalSession(id) ? id : newLocalSession();
+    let sid: string;
+    if (isLocalSession(id)) sid = id;
+    else if (id && metas().has(id)) { adoptSession(metas().get(id)!); sid = id; }
+    else sid = newLocalSession();
+    setViewRef(null);
     await startRun(sid, p, { cwd: cwd(), model: m === "default" ? undefined : m });
   }
   async function pickCwd() {
@@ -141,27 +162,16 @@ export function Console() {
     if (typeof picked === "string") setCwd(picked);
   }
 
-  // Collapse consecutive lines from the same agent into one block so a subagent
-  // renders as a single tree branch with its rows nested beneath, instead of
-  // repeating the header on every line.
-  type Block =
-    | { kind: "master"; lines: TranscriptLine[] }
-    | { kind: "sub"; agentRef: string; lines: TranscriptLine[] };
-  const blocks = (): Block[] => {
-    const out: Block[] = [];
-    // agentRef -> index of its (single) block in `out`, so interleaved parallel
-    // agents don't each spawn a fresh header every time they regain the stream.
-    const subAt = new Map<string, number>();
+  // Master stream as a flat flow: master lines verbatim, with a one-time jump
+  // marker at the first appearance of each subagent (the subagent's own steps
+  // are shown in its swap view, reachable via the marker or the rail).
+  type FlowItem = { kind: "line"; line: TranscriptLine } | { kind: "marker"; ref: string };
+  const masterFlow = (): FlowItem[] => {
+    const out: FlowItem[] = [];
+    const seenSub = new Set<string>();
     for (const l of active()?.lines ?? []) {
-      if (l.agentRef !== "master") {
-        const at = subAt.get(l.agentRef);
-        if (at !== undefined) (out[at] as Extract<Block, { kind: "sub" }>).lines.push(l);
-        else { subAt.set(l.agentRef, out.length); out.push({ kind: "sub", agentRef: l.agentRef, lines: [l] }); }
-      } else {
-        const last = out[out.length - 1];
-        if (last && last.kind === "master") last.lines.push(l);
-        else out.push({ kind: "master", lines: [l] });
-      }
+      if (l.agentRef === "master") out.push({ kind: "line", line: l });
+      else if (!seenSub.has(l.agentRef)) { seenSub.add(l.agentRef); out.push({ kind: "marker", ref: l.agentRef }); }
     }
     return out;
   };
@@ -202,59 +212,64 @@ export function Console() {
             title="start a new local session">+ NEW</button>
         </div>
         <div class="pr-sessions-list">
-          <For each={groups()}>{([key, items]) => (
+          <For each={railGroups()}>{(g) => (
             <div class="pr-session-group">
-              <div class="pr-session-group-head" onClick={() => toggleGroup(key)} title={key}>
-                <span class="pr-folder-chevron">{isGroupOpen(key) ? "▾" : "▸"}</span>
-                <span class="pr-session-group-name">{key}</span>
-                <span class="pr-folder-count">{items.length}</span>
+              <div class="pr-session-group-head" onClick={() => toggleGroup(g.dir)} title={g.dir || g.label}>
+                <span class="pr-folder-chevron">{isGroupOpen(g.dir) ? "▾" : "▸"}</span>
+                <span class="pr-session-group-dir">{g.label}</span>
+                <Show when={g.repo}><span class="pr-session-group-repo">{g.repo}</span></Show>
+                <span class="pr-folder-count">{g.sessions.length}</span>
               </div>
-              <Show when={isGroupOpen(key)}>
-                <For each={items}>{([id, s]) => {
-                  const m = () => metas().get(id);
-            const status = () => sess(id)?.status;
-            const bulletCls = () => {
-              if (failCount(id) > 0) return " is-failed";
-              const st = status();
-              return st ? ` is-${st}` : "";
-            };
-            return (
-              <div class={`pr-session${id === activeId() ? " is-active" : ""}`} onClick={() => setActiveId(id)} title={id}>
-                <span class={`pr-session-bullet${bulletCls()}`} />
-                <Show
-                  when={renaming() === id}
-                  fallback={
-                    <span class="pr-session-title" onDblClick={(e) => { e.stopPropagation(); setRenaming(id); }}>
-                      {sess(id)?.label ?? m()?.title ?? s.project ?? id.slice(0, 8)}
-                    </span>
-                  }
-                >
-                  <input
-                    class="pr-session-rename"
-                    autofocus
-                    value={sess(id)?.label ?? ""}
-                    onClick={(e) => e.stopPropagation()}
-                    onBlur={(e) => { renameSession(id, e.currentTarget.value); setRenaming(null); }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") { renameSession(id, e.currentTarget.value); setRenaming(null); }
-                      else if (e.key === "Escape") setRenaming(null);
-                    }}
-                  />
-                </Show>
-                <span class="pr-session-time">{isLocalSession(id) ? (status() === "running" ? "live" : "now") : ""}</span>
-                <Show when={isLocalSession(id) && status() === "running"}>
-                  <button class="pr-session-stop" type="button" title="stop run"
-                    onClick={(e) => { e.stopPropagation(); void stopRun(id); }}>■</button>
-                </Show>
-                <Show when={isLocalSession(id)}>
-                  <button class="pr-session-close" type="button" title="close session"
-                    onClick={(e) => { e.stopPropagation(); void closeSession(id); }}>×</button>
-                </Show>
-                <Show when={!isLocalSession(id)}>
-                  <span class="pr-session-project">{m()?.project ?? s.project ?? ""}</span>
-                </Show>
-              </div>
-            );
+              <Show when={isGroupOpen(g.dir)}>
+                <For each={g.sessions}>{(e) => {
+                  const bulletCls = () => {
+                    if (e.failCount > 0) return " is-failed";
+                    return e.status ? ` is-${e.status}` : "";
+                  };
+                  return (
+                    <>
+                      <div class={`pr-session${e.id === activeId() && viewRef() === null ? " is-active" : ""}`}
+                           onClick={() => { setActiveId(e.id); setViewRef(null); }} title={e.id}>
+                        <span class={`pr-session-bullet${bulletCls()}`} />
+                        <Show when={renaming() === e.id}
+                          fallback={
+                            <span class="pr-session-title"
+                                  onDblClick={(ev) => { ev.stopPropagation(); if (e.owned) setRenaming(e.id); }}>
+                              {e.title}
+                            </span>
+                          }>
+                          <input class="pr-session-rename" autofocus value={sess(e.id)?.label ?? ""}
+                            onClick={(ev) => ev.stopPropagation()}
+                            onBlur={(ev) => { renameSession(e.id, ev.currentTarget.value); setRenaming(null); }}
+                            onKeyDown={(ev) => {
+                              if (ev.key === "Enter") { renameSession(e.id, ev.currentTarget.value); setRenaming(null); }
+                              else if (ev.key === "Escape") setRenaming(null);
+                            }} />
+                        </Show>
+                        <span class="pr-session-time">
+                          {e.observed ? "" : e.status === "running" ? "live" : "now"}
+                        </span>
+                        <Show when={e.owned && e.status === "running"}>
+                          <button class="pr-session-stop" type="button" title="stop run"
+                            onClick={(ev) => { ev.stopPropagation(); void stopRun(e.id); }}>■</button>
+                        </Show>
+                        <Show when={e.owned}>
+                          <button class="pr-session-close" type="button" title="close session"
+                            onClick={(ev) => { ev.stopPropagation(); void closeSession(e.id); }}>×</button>
+                        </Show>
+                        <Show when={e.observed}><span class="pr-session-observed">observed</span></Show>
+                      </div>
+                      <For each={e.subagents}>{(sub) => (
+                        <div class={`pr-session-sub${e.id === activeId() && viewRef() === sub.ref ? " is-active" : ""}`}
+                             onClick={() => { setActiveId(e.id); setViewRef(sub.ref); }}
+                             title={`${sub.name} · ${sub.steps} steps`}>
+                          <span class="pr-session-sub-arrow">↳</span>
+                          <span class="pr-session-sub-name">{sub.name}</span>
+                          <span class="pr-session-sub-steps">{sub.steps}</span>
+                        </div>
+                      )}</For>
+                    </>
+                  );
                 }}</For>
               </Show>
             </div>
@@ -266,8 +281,11 @@ export function Console() {
       <section class="pr-console-right">
         <div class="pr-stream-head">
           <div class="pr-stream-crumb">
-            <span>local</span><span class="pr-crumb-sep">/</span>
-            <b>{activeTitle()}</b>
+            <span class="pr-crumb-loc" onClick={() => setViewRef(null)}>{activeTitle()}</span>
+            <Show when={viewRef()}>
+              <span class="pr-crumb-sep">/</span>
+              <b>{agentName(viewRef()!)}</b>
+            </Show>
           </div>
           <div class="pr-stream-stats">
             <div class="pr-stream-stat"><span class="lbl">TURNS</span><span class="val">{active()?.lines.length ?? 0}</span></div>
@@ -296,45 +314,45 @@ export function Console() {
             </div>
           </Show>
           <Show when={active()}>
-            <For each={blocks()}>{(b) => (
-              <Show when={b.kind === "sub"} fallback={
-                <div data-agent-ref="master">
-                  <For each={b.lines}>{(l) => (
+            <Show
+              when={viewRef() === null}
+              fallback={
+                <div data-agent-ref={viewRef()!}>
+                  <For each={(active()?.lines ?? []).filter((l) => l.agentRef === viewRef())}>{(l) => (
                     <Show when={l.role !== "user"} fallback={<div class="pr-line pr-line-prompt">{l.text}</div>}>
-                      <div class={answerLines().has(l) ? "pr-answer" : undefined}>
-                        <For each={toolSegs(l.text)}>{(s) => s.tool
-                          ? <div class="pr-line pr-tool-line"><span class="pr-tool"><span class="pr-tool-n">{s.name}</span><Show when={s.arg}><span class="pr-tool-a">{s.arg}</span></Show></span></div>
-                          : <Show when={s.text.trim()}><div class={answerLines().has(l) ? "pr-line pr-answer-text" : "pr-line pr-line-asst"}>{s.text}</div></Show>}</For>
-                      </div>
+                      <For each={toolSegs(l.text)}>{(s) => s.tool
+                        ? <div class="pr-line pr-tool-line"><span class="pr-tool"><span class="pr-tool-n">{s.name}</span><Show when={s.arg}><span class="pr-tool-a">{s.arg}</span></Show></span></div>
+                        : <Show when={s.text.trim()}><div class="pr-line pr-line-asst">{s.text}</div></Show>}</For>
                     </Show>
                   )}</For>
                 </div>
-              }>
-                {(() => {
-                  const [open, setOpen] = createSignal(false);
-                  const ref = (b as { agentRef: string }).agentRef;
-                  return (
-                    <div class={`pr-sub${open() ? " is-open" : ""}`} data-agent-ref={ref}>
-                      <button class="pr-sub-role" type="button" onClick={() => setOpen((v) => !v)}>
-                        <span class="pr-sub-name">{agentName(ref)}</span>
-                        <span class="pr-sub-meta">{b.lines.length} {b.lines.length === 1 ? "step" : "steps"}</span>
-                      </button>
-                      <Show when={open()}>
-                        <div class="pr-sub-rows">
-                          <For each={b.lines}>{(l) => (
-                            <Show when={l.role !== "user"} fallback={<div class="pr-sub-line pr-sub-line-prompt">{l.text}</div>}>
-                              <For each={toolSegs(l.text)}>{(s) => s.tool
-                                ? <div class="pr-sub-line is-tool"><span class="pr-tool"><span class="pr-tool-n">{s.name}</span><Show when={s.arg}><span class="pr-tool-a">{s.arg}</span></Show></span></div>
-                                : <Show when={s.text.trim()}><div class="pr-sub-line">{s.text}</div></Show>}</For>
-                            </Show>
-                          )}</For>
-                        </div>
-                      </Show>
-                    </div>
-                  );
-                })()}
-              </Show>
-            )}</For>
+              }
+            >
+              <div data-agent-ref="master">
+                <For each={masterFlow()}>{(item) => (
+                  <Show
+                    when={item.kind === "marker"}
+                    fallback={(() => {
+                      const l = (item as { line: TranscriptLine }).line;
+                      return (
+                        <Show when={l.role !== "user"} fallback={<div class="pr-line pr-line-prompt">{l.text}</div>}>
+                          <div class={answerLines().has(l) ? "pr-answer" : undefined}>
+                            <For each={toolSegs(l.text)}>{(s) => s.tool
+                              ? <div class="pr-line pr-tool-line"><span class="pr-tool"><span class="pr-tool-n">{s.name}</span><Show when={s.arg}><span class="pr-tool-a">{s.arg}</span></Show></span></div>
+                              : <Show when={s.text.trim()}><div class={answerLines().has(l) ? "pr-line pr-answer-text" : "pr-line pr-line-asst"}>{s.text}</div></Show>}</For>
+                          </div>
+                        </Show>
+                      );
+                    })()}
+                  >
+                    <button class="pr-spawn-marker" type="button"
+                      onClick={() => setViewRef((item as { ref: string }).ref)}>
+                      ↳ spawned {agentName((item as { ref: string }).ref)}
+                    </button>
+                  </Show>
+                )}</For>
+              </div>
+            </Show>
           </Show>
         </div>
 
@@ -389,8 +407,8 @@ export function Console() {
               }
             >
               <button type="button" class="pr-cwd-chip" onClick={pickCwd} disabled={activeRunning()}
-                title={cwd() ?? "run in app's working directory"}>
-                <span class="pr-cwd-label">{cwd() ? cwdLabel(cwd()) : "cwd: default"}</span>
+                title={cwd() ?? appDir() ?? "run in app's working directory"}>
+                <span class="pr-cwd-label">{cwd() ? cwdLabel(cwd()) : appDir() ? cwdLabel(appDir()!) : "cwd: default"}</span>
                 <Show when={cwd()}>
                   <span class="pr-cwd-clear" role="button" aria-label="clear working directory"
                     onClick={(e) => { e.stopPropagation(); if (!activeRunning()) setCwd(undefined); }}>×</span>

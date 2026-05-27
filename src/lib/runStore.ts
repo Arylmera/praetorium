@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
 import { runClaude, stopClaude } from "./claude";
-import { applyWatch, ensureSession, removeSession, setActiveId, activeId } from "./sessionStore";
-import type { ClaudeEvent, WatchEvent, SessionEvent } from "./types";
+import { applyWatch, ensureSession, removeSession, setActiveId, activeId, setOwnershipProbe } from "./sessionStore";
+import type { ClaudeEvent, WatchEvent, SessionEvent, LiveSessionMeta } from "./types";
 
 const LOCAL_PROJECT = "local run";
 
@@ -32,13 +32,24 @@ export function nextStatus(prev: RunStatus, ev: ClaudeEvent): RunStatus {
   }
 }
 
-/** True for any locally-launched session id ("local", "local-2", …). */
-export function isLocalSession(id: string | null | undefined): id is string {
-  return !!id && (id === "local" || id.startsWith("local-"));
-}
-
 const [localSessions, setLocalSessions] = createSignal<Map<string, LocalSession>>(new Map());
 export { localSessions };
+
+/** True for any owned (locally-driven) session — one present in the map. This
+ *  includes both `newLocalSession` ids and observed sessions adopted for resume. */
+export function isLocalSession(id: string | null | undefined): id is string {
+  return !!id && localSessions().has(id);
+}
+
+/** Claude session ids currently driven by an owned local session — captured from
+ *  systemInit on a run, or seeded by adoptSession. The `claude` CLI writes its
+ *  transcript under this id, which the file-watcher would otherwise surface as a
+ *  duplicate "observed" mirror of a run we already own. Used to suppress it. */
+export function ownedClaudeIds(): Set<string> {
+  const out = new Set<string>();
+  for (const s of localSessions().values()) if (s.claudeSessionId) out.add(s.claudeSessionId);
+  return out;
+}
 
 export function isRunning(sid: string): boolean {
   return localSessions().get(sid)?.status === "running";
@@ -65,6 +76,18 @@ export function newLocalSession(): string {
   ensureSession(sid);
   setActiveId(sid);
   return sid;
+}
+
+/** Adopt an observed session as an owned one so it can be resumed in place:
+ *  key it under its own Claude session id, seed claudeSessionId (the resume
+ *  target) and the real cwd, and focus it. No-op if already owned. */
+export function adoptSession(meta: LiveSessionMeta): void {
+  if (localSessions().has(meta.id)) { setActiveId(meta.id); return; }
+  setLocalSessions((prev) => new Map(prev).set(meta.id, {
+    sid: meta.id, claudeSessionId: meta.id, cwd: meta.cwd, status: "idle",
+  }));
+  ensureSession(meta.id);
+  setActiveId(meta.id);
 }
 
 /** Derive the local session's project label from the chosen cwd: its basename,
@@ -163,3 +186,6 @@ export async function closeSession(sid: string): Promise<void> {
 export function renameSession(sid: string, label: string) {
   updateSession(sid, { label: label.trim() || undefined });
 }
+
+// Let sessionStore drop file-watch events for sessions we already drive.
+setOwnershipProbe((id) => localSessions().has(id) || ownedClaudeIds().has(id));
