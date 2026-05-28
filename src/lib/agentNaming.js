@@ -1,14 +1,11 @@
 /** Stable, legible names for nested agents from their refs in first-seen order.
  *  Duplicate subagent types are numbered ("Explore 1"/"Explore 2"); a unique
  *  type is used bare; refs with no type fall back to sequential "agent N". */
-export function buildAgentNames(
-  refsInOrder: string[],
-  typeOf: (ref: string) => string | undefined,
-): Map<string, string> {
-  const map = new Map<string, string>();
-  const typeTotals = new Map<string, number>();
+export function buildAgentNames(refsInOrder, typeOf) {
+  const map = new Map();
+  const typeTotals = new Map();
   for (const r of refsInOrder) { const t = typeOf(r); if (t) typeTotals.set(t, (typeTotals.get(t) ?? 0) + 1); }
-  const typeSeen = new Map<string, number>();
+  const typeSeen = new Map();
   let generic = 0;
   for (const r of refsInOrder) {
     const t = typeOf(r);
