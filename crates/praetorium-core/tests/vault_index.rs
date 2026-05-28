@@ -1,8 +1,8 @@
-use praetorium_lib::vault::vault_index;
+use praetorium_core::vault::vault_index_sync;
 use std::fs;
 
-#[tokio::test]
-async fn indexes_md_and_skips_archive() {
+#[test]
+fn indexes_md_and_skips_archive() {
     let dir = std::env::temp_dir().join(format!("praetorium_vi_{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("Sub")).unwrap();
@@ -12,7 +12,7 @@ async fn indexes_md_and_skips_archive() {
     fs::write(dir.join("Sub/notes.txt"), "x").unwrap();
     fs::write(dir.join("Archive/Sealed.md"), "x").unwrap();
 
-    let files = vault_index(dir.to_string_lossy().to_string()).await.unwrap();
+    let files = vault_index_sync(&dir).unwrap();
     let names: Vec<_> = files.iter().map(|f| f.name.as_str()).collect();
     assert!(names.contains(&"Root"));
     assert!(names.contains(&"Child"));

@@ -1,7 +1,7 @@
 // Integration test: feed a real captured session through parse_line and assert
 // that (a) no line panics, (b) we end on a Result, (c) at least one AssistantText appears.
-use praetorium_lib::parser::parse_line;
-use praetorium_lib::events::ClaudeEvent;
+use praetorium_core::events::ClaudeEvent;
+use praetorium_core::parser::parse_line;
 
 #[test]
 fn real_session_parses_without_panic_and_terminates_in_result() {
@@ -10,7 +10,9 @@ fn real_session_parses_without_panic_and_terminates_in_result() {
 
     assert!(!events.is_empty(), "expected at least one parsed event");
     assert!(
-        events.iter().any(|e| matches!(e, ClaudeEvent::AssistantText { .. })),
+        events
+            .iter()
+            .any(|e| matches!(e, ClaudeEvent::AssistantText { .. })),
         "expected at least one assistant text event"
     );
     assert!(
