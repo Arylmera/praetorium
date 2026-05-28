@@ -4,8 +4,7 @@
   "version": "0.7.1",
   "identifier": "com.praetorium.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run build",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
