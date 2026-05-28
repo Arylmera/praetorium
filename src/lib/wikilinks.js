@@ -1,8 +1,8 @@
 /** Replace [[Name]] / [[Name|alias]] in rendered HTML with anchors carrying
  *  data-rel when the name resolves against the index, else a dim span.
  *  `index` maps lowercased note name -> vault-relative path. Pure. */
-export function resolveWikilinks(html: string, index: Map<string, string>): string {
-  return html.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_m, name: string, alias?: string) => {
+export function resolveWikilinks(html, index) {
+  return html.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_m, name, alias) => {
     const key = name.trim().toLowerCase();
     const label = (alias ?? name).trim();
     const rel = index.get(key);
