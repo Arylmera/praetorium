@@ -4,8 +4,8 @@
   "description": "",
   "type": "module",
   "scripts": {
-    "dev": "esbuild entry.jsx --bundle --outfile=dist/app.js --target=es2020 --loader:.jsx=jsx --jsx=automatic --sourcemap --watch",
-    "build": "esbuild entry.jsx --bundle --outfile=dist/app.js --target=es2020 --loader:.jsx=jsx --jsx=automatic --minify --legal-comments=none",
+    "dev": "esbuild entry.jsx --bundle --outfile=dist/app.js --target=es2020 --loader:.jsx=jsx --jsx=automatic --sourcemap --watch --define:__APP_VERSION__=\"\\\"0.7.1\\\"\"",
+    "build": "esbuild entry.jsx --bundle --outfile=dist/app.js --target=es2020 --loader:.jsx=jsx --jsx=automatic --minify --legal-comments=none --define:__APP_VERSION__=\"\\\"0.7.1\\\"\"",
     "test": "node --test",
     "tauri": "tauri"
   },
