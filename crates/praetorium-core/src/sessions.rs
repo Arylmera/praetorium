@@ -183,7 +183,7 @@ pub fn list_sessions(project_dir: &Path) -> Result<Vec<SessionMeta>, String> {
             project_dir: project_dir_str.clone(),
         });
     }
-    out.sort_by(|a, b| b.mtime_ms.cmp(&a.mtime_ms));
+    out.sort_by_key(|b| std::cmp::Reverse(b.mtime_ms));
     Ok(out)
 }
 
@@ -250,7 +250,7 @@ pub fn list_all_sessions() -> Result<Vec<SessionMeta>, String> {
             });
         }
     }
-    out.sort_by(|a, b| b.mtime_ms.cmp(&a.mtime_ms));
+    out.sort_by_key(|b| std::cmp::Reverse(b.mtime_ms));
     Ok(out)
 }
 

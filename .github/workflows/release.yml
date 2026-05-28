@@ -62,13 +62,18 @@ jobs:
         run: |
           ver=$(npm version ${{ steps.bump.outputs.level }} --no-git-tag-version)
           ver=${ver#v}
-          node -e "const f='src-tauri/tauri.conf.json',j=require('./'+f);j.version='$ver';require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
-          # Bump the first `version = "x.y.z"` in [package] of Cargo.toml.
-          sed -i -E '0,/^version = "[^"]+"/s//version = "'"$ver"'"/' src-tauri/Cargo.toml
-          # Keep Cargo.lock's own praetorium entry in sync so `npm test` /
-          # downstream builds don't fail on a dirty lockfile.
-          (cd src-tauri && cargo update -p praetorium --precise "$ver" 2>/dev/null) || true
-          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          node -e "const f='crates/praetorium-tauri/tauri.conf.json',j=require('./'+f);j.version='$ver';require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
+          # Bump the first `version = "x.y.z"` in [package] of all workspace Cargo.tomls.
+          for toml in Cargo.toml crates/praetorium-core/Cargo.toml crates/praetorium-cli/Cargo.toml crates/praetorium-tauri/Cargo.toml; do
+            sed -i -E '0,/^version = "[^"]+"/s//version = "'"$ver"'"/' "$toml"
+          done
+          # Keep Cargo.lock in sync so downstream builds don't fail on a dirty lockfile.
+          cargo update -p praetorium --precise "$ver" 2>/dev/null || true
+          cargo update -p praetorium-core --precise "$ver" 2>/dev/null || true
+          cargo update -p praetorium-cli --precise "$ver" 2>/dev/null || true
+          git add package.json package-lock.json crates/praetorium-tauri/tauri.conf.json \
+            Cargo.toml crates/praetorium-core/Cargo.toml crates/praetorium-cli/Cargo.toml \
+            crates/praetorium-tauri/Cargo.toml Cargo.lock crates/praetorium-tauri/Cargo.lock
           git commit -m "chore(release): v$ver"
           # Annotated tag: required for `git push --follow-tags` to actually
           # push the tag (lightweight tags are silently skipped).
@@ -125,7 +130,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: . -> target
 
       - uses: actions/setup-node@v4
         with:
@@ -140,4 +145,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           releaseId: ${{ needs.release.outputs.release_id }}
+          tauriContext: crates/praetorium-tauri
           args: ${{ matrix.args }}

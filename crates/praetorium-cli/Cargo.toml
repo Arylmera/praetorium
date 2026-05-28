@@ -4,7 +4,7 @@ version = "0.7.1"
 edition = "2021"
 
 [[bin]]
-name = "praetorium"
+name = "praetorium-cli"
 path = "src/main.rs"
 
 [dependencies]

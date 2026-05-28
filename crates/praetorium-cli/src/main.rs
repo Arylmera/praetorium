@@ -27,7 +27,7 @@ fn main() {
             };
             let events: Vec<_> = raw
                 .lines()
-                .flat_map(|l| session_parse::parse_transcript_line(l))
+                .flat_map(session_parse::parse_transcript_line)
                 .collect();
             println!("{}", serde_json::to_string_pretty(&events).unwrap());
         }

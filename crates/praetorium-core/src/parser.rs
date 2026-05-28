@@ -47,7 +47,7 @@ pub fn parse_line(line: &str) -> Vec<ClaudeEvent> {
     }
 }
 
-fn content_blocks<'a>(v: &'a Value) -> &'a [Value] {
+fn content_blocks(v: &Value) -> &[Value] {
     v.get("message")
         .and_then(|m| m.get("content"))
         .and_then(|c| c.as_array())

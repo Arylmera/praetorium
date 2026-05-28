@@ -1,5 +1,5 @@
-use crate::events::ClaudeEvent;
-use crate::parser::parse_line;
+use praetorium_core::events::ClaudeEvent;
+use praetorium_core::parser::parse_line;
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -12,7 +12,9 @@ use tokio::process::Command;
 /// the user's subscription auth. Keeps everything else (PATH, HOME, ...).
 pub fn sanitized_env<I: IntoIterator<Item = (String, String)>>(vars: I) -> Vec<(String, String)> {
     vars.into_iter()
-        .filter(|(k, _)| k != "CLAUDECODE" && k != "ANTHROPIC_API_KEY" && !k.starts_with("CLAUDE_CODE"))
+        .filter(|(k, _)| {
+            k != "CLAUDECODE" && k != "ANTHROPIC_API_KEY" && !k.starts_with("CLAUDE_CODE")
+        })
         .collect()
 }
 
@@ -224,7 +226,13 @@ mod tests {
         let plan = plan_claude("do thing", None, None, None);
         assert_eq!(
             plan.args,
-            vec!["-p", "do thing", "--output-format", "stream-json", "--verbose"]
+            vec![
+                "-p",
+                "do thing",
+                "--output-format",
+                "stream-json",
+                "--verbose"
+            ]
         );
     }
 
@@ -253,7 +261,10 @@ mod tests {
         let input = vec![
             ("PATH".to_string(), "/usr/bin".to_string()),
             ("CLAUDECODE".to_string(), "1".to_string()),
-            ("CLAUDE_CODE_ENTRYPOINT".to_string(), "claude-desktop".to_string()),
+            (
+                "CLAUDE_CODE_ENTRYPOINT".to_string(),
+                "claude-desktop".to_string(),
+            ),
             ("ANTHROPIC_API_KEY".to_string(), "sk-x".to_string()),
             ("HOME".to_string(), "/home/u".to_string()),
         ];
