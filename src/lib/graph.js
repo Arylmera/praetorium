@@ -1,38 +1,36 @@
-import type { ClaudeEvent, GraphEdge, GraphState, WatchEvent } from "./types";
-
 export const MASTER_ID = "__master__";
 
-export function emptyGraph(): GraphState {
+export function emptyGraph() {
   return { nodes: new Map(), edges: new Map(), activity: [] };
 }
 
-function dirname(p: string): string {
+function dirname(p) {
   const norm = p.replace(/\\/g, "/");
   const i = norm.lastIndexOf("/");
   return i <= 0 ? norm : norm.slice(0, i);
 }
 
-function ensureMaster(s: GraphState): void {
+function ensureMaster(s) {
   if (!s.nodes.has(MASTER_ID)) {
     s.nodes.set(MASTER_ID, { id: MASTER_ID, kind: "master", label: "master", status: "running" });
   }
 }
 
-function addEdge(s: GraphState, source: string, target: string): void {
+function addEdge(s, source, target) {
   const id = `${source}->${target}`;
   if (!s.edges.has(id)) s.edges.set(id, { id, source, target });
 }
 
 // Resolve which agent owns an event: master when parent is null, else the agent node
 // keyed by that tool_use id (falls back to master if the agent isn't known yet).
-function ownerId(s: GraphState, parent: string | null): string {
+function ownerId(s, parent) {
   if (parent && s.nodes.has(parent)) return parent;
   return MASTER_ID;
 }
 
 /** Pure: returns a NEW state with the event applied. */
-export function reduce(prev: GraphState, ev: ClaudeEvent): GraphState {
-  const s: GraphState = {
+export function reduce(prev, ev) {
+  const s = {
     nodes: new Map(prev.nodes),
     edges: new Map(prev.edges),
     activity: prev.activity,
@@ -72,6 +70,7 @@ export function reduce(prev: GraphState, ev: ClaudeEvent): GraphState {
     }
     case "result":
     case "runComplete": {
+      ensureMaster(s);
       const m = s.nodes.get(MASTER_ID);
       if (m) s.nodes.set(MASTER_ID, { ...m, status: "complete" });
       return s;
@@ -81,15 +80,15 @@ export function reduce(prev: GraphState, ev: ClaudeEvent): GraphState {
   }
 }
 
-const sessionMaster = (sid: string) => `${sid}:master`;
+const sessionMaster = (sid) => `${sid}:master`;
 
 /** Pure: drop every node owned by `sessionId` (its master + agents, tagged via
  *  `node.session`) and any edge touching them. Shared project/folder nodes and
  *  global folder-activity stay — other sessions may still reference them. */
-export function clearSession(prev: GraphState, sessionId: string): GraphState {
+export function clearSession(prev, sessionId) {
   const nodes = new Map(prev.nodes);
   for (const [id, n] of prev.nodes) if (n.session === sessionId) nodes.delete(id);
-  const edges = new Map<string, GraphEdge>();
+  const edges = new Map();
   for (const [id, e] of prev.edges) if (nodes.has(e.source) && nodes.has(e.target)) edges.set(id, e);
   return { nodes, edges, activity: prev.activity };
 }
@@ -97,9 +96,9 @@ export function clearSession(prev: GraphState, sessionId: string): GraphState {
 /** Fold a WatchEvent into the shared constellation graph.
  *  Agent/master nodes are namespaced per session; folder nodes are GLOBAL
  *  (keyed by absolute path) so sessions touching the same folder share a node. */
-export function reduceWatch(prev: GraphState, e: WatchEvent): GraphState {
+export function reduceWatch(prev, e) {
   if (e.type !== "session") return prev;
-  const s: GraphState = { nodes: new Map(prev.nodes), edges: new Map(prev.edges), activity: prev.activity };
+  const s = { nodes: new Map(prev.nodes), edges: new Map(prev.edges), activity: prev.activity };
   const { sessionId, agentRef, event } = e.data;
   const masterId = sessionMaster(sessionId);
   if (!s.nodes.has(masterId)) {
@@ -108,12 +107,10 @@ export function reduceWatch(prev: GraphState, e: WatchEvent): GraphState {
   // Worktree sessions hang directly off their parent repo node — the worktree
   // codename (e.g. "kind-bartik-d1c4fb") is NOT given its own node, since the
   // master already renders the session's prompt title and the codename would
-  // just be a redundant hop. The master keeps the worktree name as its internal
-  // `label` (used for title-grouping); the codename still shows in the detail
-  // panel. Non-worktree sessions hang off a project node keyed by project name.
-  const isWorktree = !!e.data.repo && e.data.repo !== e.data.project;
+  // just be a redundant hop. The master keeps its project label from first arrival.
+  const isWorktree = e.data.repo && e.data.repo !== e.data.project;
   const parentId = isWorktree ? `proj:${e.data.repo}` : `proj:${e.data.project}`;
-  const parentLabel = isWorktree ? e.data.repo! : e.data.project;
+  const parentLabel = isWorktree ? e.data.repo : e.data.project;
   if (!s.nodes.has(parentId)) {
     s.nodes.set(parentId, { id: parentId, kind: "project", label: parentLabel, status: "running" });
   }
@@ -149,13 +146,11 @@ export function reduceWatch(prev: GraphState, e: WatchEvent): GraphState {
       // Failure radar: an errored call marks the agent/master node that owns it failed.
       if (event.data.isError) {
         const owner = s.nodes.get(ownerId);
-        if (owner && (owner.kind === "agent" || owner.kind === "master")) {
-          s.nodes.set(ownerId, { ...owner, status: "failed" });
-        }
+        if (owner && owner.kind !== "folder") s.nodes.set(ownerId, { ...owner, status: "failed" });
       }
       return s;
     }
     default:
-      return s; // turn: console only
+      return s;
   }
 }
