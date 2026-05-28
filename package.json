@@ -4,12 +4,10 @@
   "description": "",
   "type": "module",
   "scripts": {
-    "start": "vite",
-    "dev": "vite",
-    "build": "vite build",
-    "serve": "vite preview",
-    "tauri": "tauri",
-    "test": "vitest run"
+    "dev": "esbuild entry.jsx --bundle --outfile=dist/app.js --target=es2020 --loader:.jsx=jsx --jsx=automatic --sourcemap --watch",
+    "build": "esbuild entry.jsx --bundle --outfile=dist/app.js --target=es2020 --loader:.jsx=jsx --jsx=automatic --minify --legal-comments=none",
+    "test": "node --test",
+    "tauri": "tauri"
   },
   "license": "MIT",
   "dependencies": {
@@ -20,15 +18,11 @@
     "d3-force": "^3.0.0",
     "d3-hierarchy": "^3.1.2",
     "marked": "^18.0.4",
-    "solid-js": "^1.9.3"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
-    "@types/d3-force": "^3.0.10",
-    "@types/d3-hierarchy": "^3.1.7",
-    "typescript": "~5.6.2",
-    "vite": "^6.0.3",
-    "vite-plugin-solid": "^2.11.0",
-    "vitest": "^4.1.7"
+    "esbuild": "^0.24.0"
   }
 }
