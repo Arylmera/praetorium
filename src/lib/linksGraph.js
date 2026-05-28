@@ -1,7 +1,5 @@
-import type { GraphState, GraphNode, GraphEdge, NoteLinks } from "./types";
-
-export const stemOf = (rel: string) => (rel.replace(/\\/g, "/").split("/").pop() ?? rel).replace(/\.md$/i, "");
-export const folderOf = (rel: string) => {
+export const stemOf = (rel) => (rel.replace(/\\/g, "/").split("/").pop() ?? rel).replace(/\.md$/i, "");
+export const folderOf = (rel) => {
   const p = rel.replace(/\\/g, "/");
   const i = p.indexOf("/");
   return i < 0 ? "root" : p.slice(0, i);
@@ -9,12 +7,12 @@ export const folderOf = (rel: string) => {
 
 /** Build a GraphState from live wikilink adjacency. Node per note (tagged by
  *  folder, weighted by degree), edge per resolved link. Pure. */
-export function linksToGraph(notes: NoteLinks[]): GraphState {
-  const nodes = new Map<string, GraphNode>();
-  const edges = new Map<string, GraphEdge>();
-  const deg = new Map<string, number>();
-  const bump = (id: string) => deg.set(id, (deg.get(id) ?? 0) + 1);
-  const ensure = (rel: string) => {
+export function linksToGraph(notes) {
+  const nodes = new Map();
+  const edges = new Map();
+  const deg = new Map();
+  const bump = (id) => deg.set(id, (deg.get(id) ?? 0) + 1);
+  const ensure = (rel) => {
     if (!nodes.has(rel)) nodes.set(rel, { id: rel, kind: "folder", label: stemOf(rel), status: "complete", session: folderOf(rel) });
   };
   for (const n of notes) {
