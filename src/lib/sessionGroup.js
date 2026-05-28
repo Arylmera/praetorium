@@ -1,6 +1,16 @@
+/** Collapse a git-worktree path back onto its parent project root so sessions
+ *  spawned in `<project>/.claude/worktrees/<branch>` group with the project
+ *  itself instead of showing the throwaway branch folder. */
+export function canonicalLocation(loc) {
+  return loc.replace(/[\\/]\.claude[\\/]worktrees[\\/][^\\/]+[\\/]?$/i, "");
+}
+
 export function groupByLocation(sessions) {
   const m = new Map();
-  for (const s of sessions) (m.get(s.location) ?? m.set(s.location, []).get(s.location)).push(s);
+  for (const s of sessions) {
+    const k = canonicalLocation(s.location);
+    (m.get(k) ?? m.set(k, []).get(k)).push(s);
+  }
   for (const arr of m.values()) arr.sort((a, b) => b.mtimeMs - a.mtimeMs);
   return [...m.entries()].sort((a, b) => b[1][0].mtimeMs - a[1][0].mtimeMs);
 }

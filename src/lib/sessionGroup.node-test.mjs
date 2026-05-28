@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { groupByLocation, groupBy, relativeTime } from "./sessionGroup.js";
+import { groupByLocation, groupBy, relativeTime, canonicalLocation } from "./sessionGroup.js";
 
 const s = (id, location, mtimeMs) =>
   ({ id, location, mtimeMs, title: id, sizeBytes: 0, projectDir: location });
@@ -15,6 +15,31 @@ test("groupByLocation: groups sessions by location", () => {
 test("groupByLocation: orders groups by their most-recent session", () => {
   const g = groupByLocation([s("a", "C:/x", 1), s("b", "C:/y", 5)]);
   assert.deepEqual(g.map(([loc]) => loc), ["C:/y", "C:/x"]);
+});
+
+test("canonicalLocation: strips the .claude/worktrees/<branch> suffix", () => {
+  assert.equal(
+    canonicalLocation("C:\\Users\\me\\git\\praetorium\\.claude\\worktrees\\bold-kepler-d0cbfd"),
+    "C:\\Users\\me\\git\\praetorium",
+  );
+  assert.equal(
+    canonicalLocation("/home/me/praetorium/.claude/worktrees/foo"),
+    "/home/me/praetorium",
+  );
+});
+
+test("canonicalLocation: leaves non-worktree paths untouched", () => {
+  assert.equal(canonicalLocation("C:/x/praetorium"), "C:/x/praetorium");
+});
+
+test("groupByLocation: collapses worktree sessions into the project group", () => {
+  const g = groupByLocation([
+    s("a", "C:/git/praetorium", 1),
+    s("b", "C:/git/praetorium/.claude/worktrees/feat-x", 3),
+  ]);
+  assert.equal(g.length, 1);
+  assert.deepEqual(g[0][1].map((x) => x.id), ["b", "a"]);
+  assert.equal(g[0][0], "C:/git/praetorium");
 });
 
 test("groupBy: groups items by key, preserving first-seen order of keys and items", () => {
