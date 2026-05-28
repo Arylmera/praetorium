@@ -2646,7 +2646,7 @@ checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "praetorium"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "notify",
  "praetorium-core",
@@ -2663,7 +2663,7 @@ dependencies = [
 
 [[package]]
 name = "praetorium-cli"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "praetorium-core",
  "serde_json",
@@ -2671,7 +2671,7 @@ dependencies = [
 
 [[package]]
 name = "praetorium-core"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "regex",
  "serde",
