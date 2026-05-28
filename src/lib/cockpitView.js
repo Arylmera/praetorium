@@ -1,13 +1,9 @@
 // Pure view-model joining the three live stores (graph topology, insights
 // per-call data, session metas) into the fields the Cockpit renders. No Solid
 // signals here so every function is unit-testable as plain (in) → (out).
-import type { GraphState, GraphNode, GraphEdge, LiveSessionMeta, NodeStatus } from "./types";
-import type { InsightsState, ToolCall } from "./insightsStore";
 
 // ---- tool categorization --------------------------------------------------
-export type ToolCategory = "read" | "edit" | "bash" | "web" | "search" | "other";
-
-export function toolCategory(name: string): ToolCategory {
+export function toolCategory(name) {
   switch (name) {
     case "Read":
     case "NotebookRead":
@@ -30,7 +26,7 @@ export function toolCategory(name: string): ToolCategory {
 }
 
 /** Pulse / swatch color per tool category (CSS var references; resolved by the DOM). */
-export const CATEGORY_COLOR: Record<ToolCategory, string> = {
+export const CATEGORY_COLOR = {
   read: "var(--accent)",
   edit: "var(--warn)",
   bash: "var(--good)",
@@ -52,16 +48,16 @@ const DONE_AGENTS_CAP = 50; // most-recent finished subagents retained for the d
  *  parent master, removing the node but redirecting the folders it touched to
  *  the master so the "where" trace survives. Running subagents stay as nodes.
  *  Returns the same reference when nothing collapses (cheap no-op). */
-export function collapseFinishedAgents(g: GraphState): GraphState {
-  const parentMaster = new Map<string, string>(); // agentId -> masterId
+export function collapseFinishedAgents(g) {
+  const parentMaster = new Map(); // agentId -> masterId
   for (const e of g.edges.values()) {
     const s = g.nodes.get(e.source), t = g.nodes.get(e.target);
     if (s?.kind === "master" && t?.kind === "agent") parentMaster.set(t.id, s.id);
   }
-  const remove = new Set<string>();
-  const done = new Map<string, number>();
-  const failed = new Map<string, number>();
-  const agents = new Map<string, { label: string; status: NodeStatus }[]>();
+  const remove = new Set();
+  const done = new Map();
+  const failed = new Map();
+  const agents = new Map();
   for (const n of g.nodes.values()) {
     if (n.kind !== "agent" || n.status === "running") continue;
     const m = parentMaster.get(n.id);
@@ -69,20 +65,20 @@ export function collapseFinishedAgents(g: GraphState): GraphState {
     remove.add(n.id);
     done.set(m, (done.get(m) ?? 0) + 1);
     if (n.status === "failed") failed.set(m, (failed.get(m) ?? 0) + 1);
-    const list = agents.get(m) ?? agents.set(m, []).get(m)!;
+    const list = agents.get(m) ?? agents.set(m, []).get(m);
     list.push({ label: n.label, status: n.status });
     if (list.length > DONE_AGENTS_CAP) list.shift(); // bound memory; `done` keeps the true total
   }
   if (!remove.size) return g;
 
-  const nodes = new Map<string, GraphNode>();
+  const nodes = new Map();
   for (const [id, n] of g.nodes) {
     if (remove.has(id)) continue;
     nodes.set(id, done.has(id)
       ? { ...n, done: done.get(id), doneFailed: failed.get(id) ?? 0, doneAgents: agents.get(id) }
       : n);
   }
-  const edges = new Map<string, GraphEdge>();
+  const edges = new Map();
   for (const [id, e] of g.edges) {
     if (remove.has(e.target)) continue;          // edge into a removed agent
     if (remove.has(e.source)) {                  // edge out of a removed agent
@@ -100,26 +96,17 @@ export function collapseFinishedAgents(g: GraphState): GraphState {
 }
 
 // ---- per-node liveness ----------------------------------------------------
-export interface NodeLive {
-  callCount: number;
-  failCount: number;
-  lastActivityMs?: number;
-  idleMs?: number;
-  recentRate: number; // 0..1
-  lastTool?: ToolCategory;
-}
 
 /** Graph node id a session+agentRef maps to (mirrors graph.ts attribution). */
-const nodeIdFor = (sid: string, agentRef: string) =>
+const nodeIdFor = (sid, agentRef) =>
   agentRef === "master" ? `${sid}:master` : `${sid}:${agentRef}`;
 
-const callEdgeMs = (c: ToolCall) => Math.max(c.startMs, c.endMs ?? c.startMs);
+const callEdgeMs = (c) => Math.max(c.startMs, c.endMs ?? c.startMs);
 
 /** Per agent/master node liveness derived from insights, keyed by graph node id. */
-export function buildNodeLive(insights: InsightsState, nowMs: number): Map<string, NodeLive> {
+export function buildNodeLive(insights, nowMs) {
   // Accumulate raw fields, then derive idle/rate.
-  type Acc = { count: number; fails: number; last: number; recent: number; lastStart: number; lastTool?: ToolCategory };
-  const acc = new Map<string, Acc>();
+  const acc = new Map();
   for (const [sid, calls] of insights) {
     for (const c of calls) {
       const id = nodeIdFor(sid, c.agentRef);
@@ -133,7 +120,7 @@ export function buildNodeLive(insights: InsightsState, nowMs: number): Map<strin
       acc.set(id, a);
     }
   }
-  const out = new Map<string, NodeLive>();
+  const out = new Map();
   for (const [id, a] of acc) {
     const lastActivityMs = a.last === -Infinity ? undefined : a.last;
     out.set(id, {
@@ -149,25 +136,12 @@ export function buildNodeLive(insights: InsightsState, nowMs: number): Map<strin
 }
 
 // ---- machine-wide aggregates ----------------------------------------------
-export interface CockpitAggregates {
-  agents: number;
-  sessions: number;
-  fails: number;
-  idle: number;
-  folders: number;
-  callsPerSec: number[]; // length SPARK_BUCKETS, oldest → newest
-}
 
 /** Idle if no node-live activity yet, or stale beyond IDLE_MS. */
-const isIdle = (live: NodeLive | undefined) =>
+const isIdle = (live) =>
   !live || live.idleMs === undefined || live.idleMs > IDLE_MS;
 
-export function buildAggregates(
-  graph: GraphState,
-  live: Map<string, NodeLive>,
-  insights: InsightsState,
-  nowMs: number,
-): CockpitAggregates {
+export function buildAggregates(graph, live, insights, nowMs) {
   let agents = 0, sessions = 0, folders = 0, fails = 0, idle = 0;
   for (const n of graph.nodes.values()) {
     if (n.kind === "agent") agents++;
@@ -181,7 +155,7 @@ export function buildAggregates(
     }
   }
   // Sparkline: bucket every call's startMs into the last SPARK_BUCKETS seconds.
-  const callsPerSec = new Array<number>(SPARK_BUCKETS).fill(0);
+  const callsPerSec = new Array(SPARK_BUCKETS).fill(0);
   const windowMs = SPARK_BUCKETS * 1000;
   for (const calls of insights.values()) {
     for (const c of calls) {
@@ -195,35 +169,11 @@ export function buildAggregates(
 }
 
 // ---- selected-node detail -------------------------------------------------
-export interface DetailCall {
-  tool: ToolCategory;
-  name: string;
-  target?: string;
-  status: "running" | "ok" | "error";
-  durMs?: number;
-}
-export interface NodeDetail {
-  sessionId?: string;
-  kind: GraphNode["kind"];
-  label: string;
-  state: string;
-  project?: string;
-  durationMs?: number;
-  fails: number;
-  calls: number;
-  idleMs?: number;
-  recentCalls: DetailCall[];
-  subagents: { label: string; status: NodeStatus }[];
-  subagentsDone?: number; // total finished subagents collapsed into this master
-  doneSubagents?: { label: string; status: NodeStatus }[]; // the (capped) finished ones, for listing
-  folders: string[];
-}
-
 const MAX_DETAIL_CALLS = 8;
 
 /** Outgoing targets of `id` whose node has the given kind. */
-function targetsOfKind(graph: GraphState, id: string, kind: GraphNode["kind"]): GraphNode[] {
-  const out: GraphNode[] = [];
+function targetsOfKind(graph, id, kind) {
+  const out = [];
   for (const e of graph.edges.values()) {
     if (e.source !== id) continue;
     const t = graph.nodes.get(e.target);
@@ -232,13 +182,7 @@ function targetsOfKind(graph: GraphState, id: string, kind: GraphNode["kind"]): 
   return out;
 }
 
-export function buildDetail(
-  graph: GraphState,
-  nodeId: string,
-  insights: InsightsState,
-  metas: Map<string, LiveSessionMeta>,
-  nowMs: number,
-): NodeDetail | null {
+export function buildDetail(graph, nodeId, insights, metas, nowMs) {
   const node = graph.nodes.get(nodeId);
   if (!node) return null;
 
@@ -264,7 +208,7 @@ export function buildDetail(
   const durationMs = firstStart !== undefined && lastEdge !== undefined ? lastEdge - firstStart : undefined;
   const idleMs = lastEdge !== undefined ? Math.max(0, nowMs - lastEdge) : undefined;
 
-  const recentCalls: DetailCall[] = scoped
+  const recentCalls = scoped
     .slice(-MAX_DETAIL_CALLS)
     .map((c) => ({
       tool: toolCategory(c.name),
@@ -277,7 +221,7 @@ export function buildDetail(
   const subagents = targetsOfKind(graph, nodeId, "agent").map((a) => ({ label: a.label, status: a.status }));
 
   // Folders touched = folders linked from this node and from its subagent children.
-  const folderSet = new Set<string>();
+  const folderSet = new Set();
   for (const f of targetsOfKind(graph, nodeId, "folder")) folderSet.add(f.label);
   for (const a of subagents.length ? targetsOfKind(graph, nodeId, "agent") : []) {
     for (const f of targetsOfKind(graph, a.id, "folder")) folderSet.add(f.label);
