@@ -1,4 +1,5 @@
 import { createStore } from "./create-store.js";
+import { basename } from "../lib/path.js";
 import * as _claudeLib from "../lib/claude.js";
 import { applyWatch, ensureSession, removeSession, setActiveId, activeIdStore, setOwnershipProbe } from "./session-store.js";
 
@@ -84,9 +85,7 @@ export function adoptSession(meta) {
  *  or "local run" when no cwd is set. Tolerates trailing and Windows separators. */
 export function cwdLabel(cwd) {
   if (!cwd) return LOCAL_PROJECT;
-  const trimmed = cwd.replace(/[/\\]+$/, "");
-  const base = trimmed.split(/[/\\]/).pop();
-  return base || LOCAL_PROJECT;
+  return basename(cwd) || LOCAL_PROJECT;
 }
 
 /** Parent-repo label for a git-worktree cwd (.../<repo>/.claude/worktrees/<name>).

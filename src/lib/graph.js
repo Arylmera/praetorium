@@ -1,13 +1,9 @@
+import { dirname } from "./path.js";
+
 export const MASTER_ID = "__master__";
 
 export function emptyGraph() {
   return { nodes: new Map(), edges: new Map(), activity: [] };
-}
-
-function dirname(p) {
-  const norm = p.replace(/\\/g, "/");
-  const i = norm.lastIndexOf("/");
-  return i <= 0 ? norm : norm.slice(0, i);
 }
 
 function ensureMaster(s) {

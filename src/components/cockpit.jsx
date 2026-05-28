@@ -4,7 +4,8 @@ import { graphStore, insightsStore, metasStore, sessionsStore } from "../stores/
 import { layoutNameStore, setLayout } from "../stores/settings.js";
 import { RadialForceLayout, HierarchicalLayout } from "../lib/layout.js";
 import {
-  buildAggregates, buildDetail, buildNodeLive, collapseFinishedAgents, CATEGORY_COLOR, IDLE_MS, toolCategory,
+  buildAggregates, buildDetail, buildNodeLive, collapseFinishedAgents, collapseByTitle, pruneArchived,
+  CATEGORY_COLOR, IDLE_MS, toolCategory,
 } from "../lib/cockpitView.js";
 
 const W = 1400, H = 980;
@@ -24,79 +25,6 @@ const folderBase = (p) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p;
 const TOOL_GLYPH = {
   read: "▤", edit: "⊞", bash: "$", web: "◍", search: "⌕", other: "•",
 };
-
-/** Keep only what a live session anchors. */
-function pruneArchived(g, metas) {
-  const outT = new Map();
-  const inS = new Map();
-  for (const e of g.edges.values()) {
-    if (!g.nodes.has(e.source) || !g.nodes.has(e.target)) continue;
-    (outT.get(e.source) ?? outT.set(e.source, []).get(e.source)).push(e.target);
-    (inS.get(e.target) ?? inS.set(e.target, []).get(e.target)).push(e.source);
-  }
-  const visibleSession = (sid) => !sid || sid === "local" || sid.startsWith("local-") || metas.has(sid);
-  const keep = new Set();
-  for (const n of g.nodes.values())
-    if ((n.kind === "master" || n.kind === "agent") && visibleSession(n.session)) keep.add(n.id);
-  for (let changed = true; changed; ) {
-    changed = false;
-    for (const n of g.nodes.values()) {
-      if (keep.has(n.id)) continue;
-      const ok = n.kind === "folder" ? (inS.get(n.id) ?? []).some((s) => keep.has(s))
-        : n.kind === "project" ? (outT.get(n.id) ?? []).some((t) => keep.has(t))
-        : false;
-      if (ok) { keep.add(n.id); changed = true; }
-    }
-  }
-  const nodes = new Map();
-  for (const [id, n] of g.nodes) if (keep.has(id)) nodes.set(id, n);
-  const edges = new Map();
-  for (const [id, e] of g.edges) if (nodes.has(e.source) && nodes.has(e.target)) edges.set(id, e);
-  return { nodes, edges, activity: g.activity };
-}
-
-/** Collapse same-title sessions into grouped master node with ×count. */
-function collapseByTitle(g, metas, sessions) {
-  const sessionTitle = (sid) => {
-    const m = metas.get(sid)?.title;
-    if (m && m !== sid) return m;
-    const first = sessions.get(sid)?.lines.find((l) => l.role === "user")?.text;
-    return first ?? sid.slice(0, 6);
-  };
-  const remap = new Map();
-  const nodes = new Map();
-  const count = new Map();
-  for (const n of g.nodes.values()) {
-    if (n.kind === "master" && n.session) {
-      const title = sessionTitle(n.session);
-      const proj = metas.get(n.session)?.project ?? "";
-      const key = `${proj}::${title}`;
-      const existing = [...nodes.values()].find(
-        (x) => x.kind === "master" && x.session && sessionTitle(x.session) === title
-          && (metas.get(x.session)?.project ?? "") === proj
-      );
-      if (existing) {
-        remap.set(n.id, existing.id);
-        count.set(existing.id, (count.get(existing.id) ?? 1) + 1);
-        continue;
-      }
-    }
-    nodes.set(n.id, n);
-  }
-  if (remap.size === 0) return g;
-  for (const [id, c] of count) {
-    const n = nodes.get(id);
-    if (n) nodes.set(id, { ...n, weight: c });
-  }
-  const edges = new Map();
-  for (const [id, e] of g.edges) {
-    const s = remap.get(e.source) ?? e.source;
-    const t = remap.get(e.target) ?? e.target;
-    if (!nodes.has(s) || !nodes.has(t) || s === t) continue;
-    edges.set(id, { id, source: s, target: t });
-  }
-  return { nodes, edges, activity: g.activity };
-}
 
 export function Cockpit() {
   const graph = useStore(graphStore);
@@ -130,10 +58,16 @@ export function Cockpit() {
     return first ?? sid.slice(0, 6);
   }, [metas, sessions]);
 
+  // A session is visible when it's a local run or still tracked in live metas.
+  const isVisible = useCallback(
+    (sid) => !sid || sid === "local" || sid.startsWith("local-") || metas.has(sid),
+    [metas]
+  );
+
   // Prune archived → collapse same-title sessions → fold finished subagents.
   const displayGraph = useMemo(
-    () => collapseFinishedAgents(collapseByTitle(pruneArchived(graph, metas), metas, sessions)),
-    [graph, metas, sessions]
+    () => collapseFinishedAgents(collapseByTitle(pruneArchived(graph, isVisible), sessionTitle)),
+    [graph, isVisible, sessionTitle]
   );
 
   // Live per-node liveness + machine aggregates.

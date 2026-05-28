@@ -1,4 +1,4 @@
-const norm = (s) => s.replace(/\\/g, "/");
+import { normalizePath as norm } from "./path.js";
 
 export function buildTree(files) {
   const root = { kind: "folder", name: "", path: "", folders: [], files: [], count: 0 };

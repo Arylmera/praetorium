@@ -95,6 +95,73 @@ export function collapseFinishedAgents(g) {
   return { nodes, edges, activity: g.activity };
 }
 
+// ---- prune archived sessions ----------------------------------------------
+/** Keep only what a live session anchors. Visible master/agent nodes are roots;
+ *  a folder survives when a kept session points at it (shared folders stay shared),
+ *  and a project survives when it still owns a kept child — so repo->worktree chains
+ *  collapse cleanly and empty repo/worktree hubs (archived-only) are dropped.
+ *  `isVisible` decides whether a session id is still live. */
+export function pruneArchived(g, isVisible) {
+  const outT = new Map(); // source -> targets
+  const inS = new Map();  // target -> sources
+  for (const e of g.edges.values()) {
+    if (!g.nodes.has(e.source) || !g.nodes.has(e.target)) continue;
+    (outT.get(e.source) ?? outT.set(e.source, []).get(e.source)).push(e.target);
+    (inS.get(e.target) ?? inS.set(e.target, []).get(e.target)).push(e.source);
+  }
+  const keep = new Set();
+  for (const n of g.nodes.values())
+    if ((n.kind === "master" || n.kind === "agent") && isVisible(n.session)) keep.add(n.id);
+  // Fixpoint: folders need a kept source; projects need a kept target (repo->worktree->master).
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const n of g.nodes.values()) {
+      if (keep.has(n.id)) continue;
+      const ok = n.kind === "folder" ? (inS.get(n.id) ?? []).some((s) => keep.has(s))
+        : n.kind === "project" ? (outT.get(n.id) ?? []).some((t) => keep.has(t))
+        : false;
+      if (ok) { keep.add(n.id); changed = true; }
+    }
+  }
+  const nodes = new Map();
+  for (const [id, n] of g.nodes) if (keep.has(id)) nodes.set(id, n);
+  const edges = new Map();
+  for (const [id, e] of g.edges) if (nodes.has(e.source) && nodes.has(e.target)) edges.set(id, e);
+  return { nodes, edges, activity: g.activity };
+}
+
+// ---- collapse same-title sessions -----------------------------------------
+/** Collapse same-title sessions (same triggering prompt, within a project) into one
+ *  grouped master node with a ×count. Their subagents/folders re-link to the group.
+ *  `titleOf` resolves a session id to its display title. */
+export function collapseByTitle(g, titleOf) {
+  const remap = new Map();
+  const nodes = new Map();
+  const count = new Map();
+  for (const n of g.nodes.values()) {
+    if (n.kind === "master" && n.session) {
+      // Normalize the title (trim + 60-char prefix) so the same prompt always groups,
+      // regardless of whether the title came from the 80-char meta or the full transcript.
+      const gid = `grp:${n.label}:${titleOf(n.session).trim().slice(0, 60)}`; // n.label = project
+      remap.set(n.id, gid);
+      count.set(gid, (count.get(gid) ?? 0) + 1);
+      if (!nodes.has(gid)) nodes.set(gid, { id: gid, kind: "master", label: n.label, status: "running", session: n.session });
+    } else if (!nodes.has(n.id)) {
+      nodes.set(n.id, n);
+    }
+  }
+  for (const [gid, c] of count) { const node = nodes.get(gid); if (node) nodes.set(gid, { ...node, weight: c }); }
+  const edges = new Map();
+  for (const e of g.edges.values()) {
+    const s = remap.get(e.source) ?? e.source;
+    const t = remap.get(e.target) ?? e.target;
+    if (s === t) continue;
+    const id = `${s}->${t}`;
+    if (!edges.has(id)) edges.set(id, { id, source: s, target: t });
+  }
+  return { nodes, edges, activity: g.activity };
+}
+
 // ---- per-node liveness ----------------------------------------------------
 
 /** Graph node id a session+agentRef maps to (mirrors graph.ts attribution). */
