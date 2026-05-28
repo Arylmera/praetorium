@@ -1,46 +1,31 @@
-import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, forceX, forceY, forceRadial, type SimulationNodeDatum } from "d3-force";
+import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, forceX, forceY, forceRadial } from "d3-force";
 import { stratify, tree } from "d3-hierarchy";
-import type { GraphState } from "./types";
-
-export interface PositionedNode {
-  id: string;
-  x: number;
-  y: number;
-}
-export interface LayoutStrategy {
-  readonly name: string;
-  layout(state: GraphState, width: number, height: number): PositionedNode[];
-}
-
-interface SimNode extends SimulationNodeDatum {
-  id: string;
-}
 
 // BFS hop-distance from the root(s). Roots = nodes with no incoming edge (or, if
 // the graph is fully cyclic, every node falls back to depth 0). Edges are walked
 // undirected so children of a hub all land one ring out regardless of direction.
-function bfsDepth(state: GraphState): Map<string, number> {
-  const adj = new Map<string, string[]>();
+function bfsDepth(state) {
+  const adj = new Map();
   for (const id of state.nodes.keys()) adj.set(id, []);
-  const hasIncoming = new Set<string>();
+  const hasIncoming = new Set();
   for (const e of state.edges.values()) {
     adj.get(e.source)?.push(e.target);
     adj.get(e.target)?.push(e.source);
     hasIncoming.add(e.target);
   }
-  const depth = new Map<string, number>();
-  const queue: string[] = [];
+  const depth = new Map();
+  const queue = [];
   for (const id of state.nodes.keys()) {
     if (!hasIncoming.has(id)) { depth.set(id, 0); queue.push(id); }
   }
   // Fully cyclic / no clear root: seed BFS from an arbitrary node.
   if (queue.length === 0 && state.nodes.size > 0) {
-    const first = state.nodes.keys().next().value as string;
+    const first = state.nodes.keys().next().value;
     depth.set(first, 0); queue.push(first);
   }
   while (queue.length) {
-    const cur = queue.shift()!;
-    const d = depth.get(cur)!;
+    const cur = queue.shift();
+    const d = depth.get(cur);
     for (const next of adj.get(cur) ?? []) {
       if (!depth.has(next)) { depth.set(next, d + 1); queue.push(next); }
     }
@@ -52,25 +37,25 @@ function bfsDepth(state: GraphState): Map<string, number> {
 // reached by walking incoming edges. Worktrees of one repo share their repo's
 // group; unrelated projects each get their own. Used to push distinct project
 // roots apart so each sunburst claims its own space instead of piling up center.
-function rootGroups(state: GraphState): Map<string, string> {
-  const parent = new Map<string, string>(); // node -> first incoming source
+function rootGroups(state) {
+  const parent = new Map(); // node -> first incoming source
   for (const e of state.edges.values()) {
     if (!parent.has(e.target) && state.nodes.has(e.source)) parent.set(e.target, e.source);
   }
-  const find = (id: string): string => {
+  const find = (id) => {
     let cur = id;
-    for (let guard = 0; parent.has(cur) && guard < 1000; guard++) cur = parent.get(cur)!;
+    for (let guard = 0; parent.has(cur) && guard < 1000; guard++) cur = parent.get(cur);
     return cur;
   };
-  const group = new Map<string, string>();
+  const group = new Map();
   for (const id of state.nodes.keys()) group.set(id, find(id));
   return group;
 }
 
-export class RadialForceLayout implements LayoutStrategy {
-  readonly name = "radial";
-  layout(state: GraphState, width: number, height: number): PositionedNode[] {
-    const nodes: SimNode[] = [...state.nodes.keys()].map((id) => ({ id }));
+export class RadialForceLayout {
+  get name() { return "radial"; }
+  layout(state, width, height) {
+    const nodes = [...state.nodes.keys()].map((id) => ({ id }));
     const links = [...state.edges.values()].map((e) => ({ source: e.source, target: e.target }));
     // Graph distance from the root(s) → concentric rings. Parents/children stay
     // radially ordered, which prevents most spoke crossings while charge+collide
@@ -82,7 +67,7 @@ export class RadialForceLayout implements LayoutStrategy {
     // unrelated projects (a root in another directory) don't crowd each other.
     const group = rootGroups(state);
     const SEP_DIST = 240; // min gap enforced across groups
-    const interGroupSeparation = (alpha: number) => {
+    const interGroupSeparation = (alpha) => {
       const k = alpha * 0.6;
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
@@ -100,10 +85,10 @@ export class RadialForceLayout implements LayoutStrategy {
     };
     const sim = forceSimulation(nodes)
       .force("charge", forceManyBody().strength(-520))
-      .force("link", forceLink(links).id((d: any) => d.id).distance(140))
+      .force("link", forceLink(links).id((d) => d.id).distance(140))
       .force("center", forceCenter(cx, cy))
       .force("collide", forceCollide(70)) // keep nodes (and their labels) from overlapping
-      .force("radial", forceRadial<SimNode>((d) => (depth.get(d.id) ?? 0) * ring, cx, cy).strength(0.45))
+      .force("radial", forceRadial((d) => (depth.get(d.id) ?? 0) * ring, cx, cy).strength(0.45))
       .force("rootSep", interGroupSeparation)
       // Gently pull every node toward the middle so DISCONNECTED components (e.g. an
       // orphan agent cluster) sit close to the rest instead of flying to the corners.
@@ -118,15 +103,15 @@ export class RadialForceLayout implements LayoutStrategy {
 
 const HROOT = "__hroot__";
 
-export class HierarchicalLayout implements LayoutStrategy {
-  readonly name = "hierarchical";
-  layout(state: GraphState, width: number, height: number): PositionedNode[] {
+export class HierarchicalLayout {
+  get name() { return "hierarchical"; }
+  layout(state, width, height) {
     if (state.nodes.size === 0) return [];
     // Parent of each node = source of its first incoming edge; any node with no
     // incoming edge (project roots, the local run, etc.) attaches to a synthetic
     // super-root so stratify always sees exactly ONE root (multi-session safe).
     const edges = [...state.edges.values()];
-    const rows = [{ id: HROOT, parentId: null as string | null }];
+    const rows = [{ id: HROOT, parentId: null }];
     for (const id of state.nodes.keys()) {
       const incoming = edges.find((e) => e.target === id);
       const parentId = incoming && state.nodes.has(incoming.source) ? incoming.source : HROOT;
@@ -134,17 +119,17 @@ export class HierarchicalLayout implements LayoutStrategy {
     }
     let root;
     try {
-      root = stratify<{ id: string; parentId: string | null }>()
+      root = stratify()
         .id((d) => d.id).parentId((d) => d.parentId)(rows);
     } catch {
       // Cycle or duplicate parent edge — fall back to flat under the root.
       const flat = rows.map((r) => (r.id === HROOT ? r : { id: r.id, parentId: HROOT }));
-      root = stratify<{ id: string; parentId: string | null }>()
+      root = stratify()
         .id((d) => d.id).parentId((d) => d.parentId)(flat);
     }
-    tree<{ id: string; parentId: string | null }>().size([height - 40, width - 140])(root);
+    tree().size([height - 40, width - 140])(root);
     return root.descendants()
-      .filter((d: any) => d.data.id !== HROOT)
-      .map((d: any) => ({ id: d.data.id, x: d.y + 70, y: d.x + 20 }));
+      .filter((d) => d.data.id !== HROOT)
+      .map((d) => ({ id: d.data.id, x: d.y + 70, y: d.x + 20 }));
   }
 }
