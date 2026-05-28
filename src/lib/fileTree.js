@@ -1,22 +1,10 @@
-import type { VaultFile } from "./types";
+const norm = (s) => s.replace(/\\/g, "/");
 
-export interface TreeFile { kind: "file"; name: string; rel: string }
-export interface TreeFolder {
-  kind: "folder";
-  name: string;
-  path: string;            // forward-slash path, "" for root
-  folders: TreeFolder[];
-  files: TreeFile[];
-  count: number;           // total descendant files
-}
-
-const norm = (s: string) => s.replace(/\\/g, "/");
-
-export function buildTree(files: VaultFile[]): TreeFolder {
-  const root: TreeFolder = { kind: "folder", name: "", path: "", folders: [], files: [], count: 0 };
+export function buildTree(files) {
+  const root = { kind: "folder", name: "", path: "", folders: [], files: [], count: 0 };
   for (const file of files) {
     const parts = norm(file.rel).split("/").filter(Boolean);
-    const fileName = parts.pop()!;
+    const fileName = parts.pop();
     let node = root;
     for (const seg of parts) {
       let next = node.folders.find((x) => x.name === seg);
@@ -28,7 +16,7 @@ export function buildTree(files: VaultFile[]): TreeFolder {
     }
     node.files.push({ kind: "file", name: fileName, rel: norm(file.rel) });
   }
-  const finish = (n: TreeFolder): number => {
+  const finish = (n) => {
     n.folders.sort((a, b) => a.name.localeCompare(b.name));
     n.files.sort((a, b) => a.name.localeCompare(b.name));
     let c = n.files.length;
@@ -40,17 +28,9 @@ export function buildTree(files: VaultFile[]): TreeFolder {
   return root;
 }
 
-export interface Row {
-  kind: "folder" | "file";
-  id: string;              // folder.path or file.rel — unique
-  name: string;
-  depth: number;
-  count?: number;          // folders only
-}
-
-export function flattenVisible(root: TreeFolder, open: Set<string>): Row[] {
-  const rows: Row[] = [];
-  const walk = (node: TreeFolder, depth: number) => {
+export function flattenVisible(root, open) {
+  const rows = [];
+  const walk = (node, depth) => {
     for (const folder of node.folders) {
       rows.push({ kind: "folder", id: folder.path, name: folder.name, depth, count: folder.count });
       if (open.has(folder.path)) walk(folder, depth + 1);
