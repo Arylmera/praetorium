@@ -1,18 +1,26 @@
-import { createEffect, onCleanup, onMount } from "solid-js";
-import { theme } from "../themes/theme";
-import { reduceMotion } from "../lib/settings";
+import React, { useRef, useEffect } from "react";
+import { themeStore } from "../themes/theme.js";
+import { reduceMotionStore } from "../stores/settings.js";
+import { useStore } from "../stores/use-store.js";
 
 /* Full-bleed ambient layer for the three special themes. Ported from the
    design handoff's vanilla-JS AmbientCanvas: one <canvas>, one rAF loop, a
    different per-theme effect. Non-special themes (and reduced motion) idle the
    loop. Sits behind the chrome via .a-ambient (z-index 0). */
 
-type Anim = { tick: (t: number) => void; teardown?: () => void };
-
 export function AmbientCanvas() {
-  let canvas!: HTMLCanvasElement;
+  const canvasRef = useRef(null);
+  // Ref to the setTheme function created inside the setup effect, so the
+  // theme-watching effect can call it without re-running canvas setup.
+  const setThemeRef = useRef(null);
 
-  onMount(() => {
+  const currentTheme = useStore(themeStore);
+  const reduceMotion = useStore(reduceMotionStore);
+
+  // Setup effect: initialise canvas, rAF loop, resize handler. Runs once.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
@@ -29,24 +37,24 @@ export function AmbientCanvas() {
     window.addEventListener("resize", fit);
     fit();
 
-    let anim: Anim | null = null;
+    let anim = null;
     let startT = 0;
     let rafId = 0;
 
-    const loop = (t: number) => {
+    const loop = (t) => {
       if (anim) anim.tick(t - startT);
       rafId = requestAnimationFrame(loop);
     };
     rafId = requestAnimationFrame(loop);
 
-    const BUILDERS: Record<string, () => Anim> = {
+    const BUILDERS = {
       // TERMINAL — phosphor noise + flicker + occasional bright scan
       terminal: () => {
         const noiseW = 240;
         const noiseH = Math.round(noiseW * (window.innerHeight / window.innerWidth));
         const off = document.createElement("canvas");
         off.width = noiseW; off.height = noiseH;
-        const offCtx = off.getContext("2d")!;
+        const offCtx = off.getContext("2d");
         const img = offCtx.createImageData(noiseW, noiseH);
         let lastNoise = 0, lastScan = 0;
         return {
@@ -90,7 +98,7 @@ export function AmbientCanvas() {
 
       // COCKPIT — sparse slow star drift
       cockpit: () => {
-        const stars: any[] = [];
+        const stars = [];
         for (let i = 0; i < 110; i++) {
           stars.push({
             x: Math.random() * W,
@@ -125,7 +133,7 @@ export function AmbientCanvas() {
 
       // GRIMDARK — rising embers + drifting smoke
       grimdark: () => {
-        const embers: any[] = [];
+        const embers = [];
         const spawn = () => {
           embers.push({
             x: Math.random() * W,
@@ -140,7 +148,7 @@ export function AmbientCanvas() {
         };
         for (let i = 0; i < 60; i++) { spawn(); embers[i].y = Math.random() * H; embers[i].life = Math.random() * 3000; }
 
-        const smoke: any[] = [];
+        const smoke = [];
         for (let i = 0; i < 6; i++) {
           smoke.push({
             x: Math.random() * W,
@@ -194,32 +202,38 @@ export function AmbientCanvas() {
       },
     };
 
-    const setTheme = (key: string | null) => {
-      anim?.teardown?.();
+    const setTheme = (key) => {
+      if (anim && anim.teardown) anim.teardown();
       ctx.clearRect(0, 0, W, H);
       anim = key && BUILDERS[key] ? BUILDERS[key]() : null;
       startT = performance.now();
     };
 
-    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Expose setTheme so the theme-watching effect can call it.
+    setThemeRef.current = setTheme;
 
-    // Drive the active effect from the theme + reduce-motion settings.
-    createEffect(() => {
-      const t = theme();
-      const idle = reduceMotion() || prefersReduced;
-      setTheme(idle ? null : t in BUILDERS ? t : null);
-    });
-
-    onCleanup(() => {
+    return () => {
       cancelAnimationFrame(rafId);
       window.removeEventListener("resize", fit);
       ctx.clearRect(0, 0, W, H);
-    });
-  });
+      setThemeRef.current = null;
+    };
+  }, []); // runs once on mount
+
+  // Theme/motion-watching effect: rebuilds the active animation when theme or
+  // reduceMotion changes. Mirrors the original createEffect inside onMount.
+  useEffect(() => {
+    const setTheme = setThemeRef.current;
+    if (!setTheme) return;
+    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const BUILDER_KEYS = ["terminal", "cockpit", "grimdark"];
+    const idle = reduceMotion || prefersReduced;
+    setTheme(idle ? null : BUILDER_KEYS.includes(currentTheme) ? currentTheme : null);
+  }, [currentTheme, reduceMotion]);
 
   return (
-    <div class="a-ambient" aria-hidden="true">
-      <canvas ref={canvas} />
+    <div className="a-ambient" aria-hidden="true">
+      <canvas ref={canvasRef} />
     </div>
   );
 }
