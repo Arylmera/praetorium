@@ -5,7 +5,7 @@
    one accent (â‰¤10%), animated scan-line, dot-grid background.
 
    Foundation tokens synced with Token-Dashboard@develop. Apply
-   class "td-root" to the app wrapper; pick a theme with
+   class "pr-root" to the app wrapper; pick a theme with
    data-theme="forge" (etc.) on the same element. Bare .pr-root = dark.
 
    Two-voice contract:

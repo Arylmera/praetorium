@@ -28,7 +28,7 @@ export function applyGlass() {
 }
 
 // Panel opacity for glass mode (0–100%). Feeds the CSS `--glass-opacity`
-// var via an inline style on the .td-root wrapper (see App.tsx).
+// var via an inline style on the .pr-root wrapper (see app.jsx).
 const GLASS_OPACITY_KEY = "praetorium.glassOpacity";
 const storedOpacity = Number(localStorage.getItem(GLASS_OPACITY_KEY));
 export const glassOpacityStore = createStore(
