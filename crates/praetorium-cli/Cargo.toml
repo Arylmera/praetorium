@@ -1,0 +1,12 @@
+[package]
+name = "praetorium-cli"
+version = "0.7.1"
+edition = "2021"
+
+[[bin]]
+name = "praetorium"
+path = "src/main.rs"
+
+[dependencies]
+praetorium-core = { path = "../praetorium-core" }
+serde_json = "1"
