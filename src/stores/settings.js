@@ -1,52 +1,48 @@
-import { createSignal } from "solid-js";
+import { createStore } from "./create-store.js";
 
 const MOTION_KEY = "praetorium.reduceMotion";
-const [reduceMotion, setReduceMotionSignal] = createSignal(localStorage.getItem(MOTION_KEY) === "1");
-export { reduceMotion };
-export function setReduceMotion(v: boolean) {
+export const reduceMotionStore = createStore(localStorage.getItem(MOTION_KEY) === "1");
+export function setReduceMotion(v) {
   localStorage.setItem(MOTION_KEY, v ? "1" : "0");
-  setReduceMotionSignal(v);
+  reduceMotionStore.set(v);
 }
 export function applyReduceMotion() {
-  document.documentElement.setAttribute("data-reduce-motion", reduceMotion() ? "1" : "0");
+  document.documentElement.setAttribute("data-reduce-motion", reduceMotionStore.get() ? "1" : "0");
 }
 
 const GLASS_KEY = "praetorium.glass";
-const [glass, setGlassSignal] = createSignal(localStorage.getItem(GLASS_KEY) === "1");
-export { glass };
+export const glassStore = createStore(localStorage.getItem(GLASS_KEY) === "1");
 // Drive native window vibrancy (Mica/Acrylic on Windows, NSVisualEffect on
 // macOS) so the OS blur sits behind the CSS .is-glass panels. No-op outside Tauri.
-function syncNativeGlass(v: boolean) {
+function syncNativeGlass(v) {
   if (!("__TAURI_INTERNALS__" in window || "__TAURI__" in window)) return;
   import("@tauri-apps/api/core").then((m) => m.invoke("set_glass", { on: v })).catch(() => { /* not in a Tauri window */ });
 }
-export function setGlass(v: boolean) {
+export function setGlass(v) {
   localStorage.setItem(GLASS_KEY, v ? "1" : "0");
-  setGlassSignal(v);
+  glassStore.set(v);
   syncNativeGlass(v);
 }
 export function applyGlass() {
-  syncNativeGlass(glass());
+  syncNativeGlass(glassStore.get());
 }
 
 // Panel opacity for glass mode (0–100%). Feeds the CSS `--glass-opacity`
 // var via an inline style on the .td-root wrapper (see App.tsx).
 const GLASS_OPACITY_KEY = "praetorium.glassOpacity";
 const storedOpacity = Number(localStorage.getItem(GLASS_OPACITY_KEY));
-const [glassOpacity, setGlassOpacitySignal] = createSignal(
+export const glassOpacityStore = createStore(
   Number.isFinite(storedOpacity) && storedOpacity > 0 ? storedOpacity : 25);
-export { glassOpacity };
-export function setGlassOpacity(v: number) {
+export function setGlassOpacity(v) {
   const clamped = Math.max(0, Math.min(100, Math.round(v)));
   localStorage.setItem(GLASS_OPACITY_KEY, String(clamped));
-  setGlassOpacitySignal(clamped);
+  glassOpacityStore.set(clamped);
 }
 
 const LAYOUT_KEY = "praetorium.layout";
-const [layoutName, setLayoutSignal] = createSignal<"radial" | "hierarchical">(
-  (localStorage.getItem(LAYOUT_KEY) as "radial" | "hierarchical") || "hierarchical");
-export { layoutName };
-export function setLayout(v: "radial" | "hierarchical") {
+export const layoutNameStore = createStore(
+  localStorage.getItem(LAYOUT_KEY) || "hierarchical");
+export function setLayout(v) {
   localStorage.setItem(LAYOUT_KEY, v);
-  setLayoutSignal(v);
+  layoutNameStore.set(v);
 }
