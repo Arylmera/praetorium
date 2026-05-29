@@ -1,14 +1,18 @@
 import React, { useState, useMemo, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { RadialForceLayout } from "../../lib/layout";
+import { RadialForceLayout, HierarchicalLayout } from "../../lib/layout";
 import { vaultPathStore } from "../../stores/vault-store.js";
 import { linksToGraph } from "../../lib/linksGraph";
 import { openNote } from "../../stores/explorer-store.js";
+import { layoutNameStore, setLayout } from "../../stores/settings.js";
 import { useStore } from "../../stores/use-store.js";
 import { useEffect } from "react";
 
 const W = 1200, H = 860;
-const layout = new RadialForceLayout();
+const strategies = {
+  radial: new RadialForceLayout(),
+  hierarchical: new HierarchicalLayout(),
+};
 
 const posMap = (nodes) => new Map(nodes.map((p) => [p.id, p]));
 const folderColor = (f) =>
@@ -18,6 +22,7 @@ const radiusOf = (w) => Math.min(26, 5 + Math.sqrt(w ?? 0) * 3);
 
 export function MapView() {
   const vaultPath = useStore(vaultPathStore);
+  const layoutName = useStore(layoutNameStore);
 
   const [linkNotes, setLinkNotes] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -44,7 +49,7 @@ export function MapView() {
 
   const base = useMemo(() => {
     const g = graph;
-    const positioned = layout.layout(g, W, H);
+    const positioned = (strategies[layoutName] ?? strategies.radial).layout(g, W, H);
     const pos = posMap(positioned);
     let bx = 0, by = 0, bw = W, bh = H;
     if (positioned.length) {
@@ -54,7 +59,7 @@ export function MapView() {
       bw = Math.max(...xs) + labelPad - bx; bh = Math.max(...ys) + pad - by;
     }
     return { g, pos, bx, by, bw, bh };
-  }, [graph]);
+  }, [graph, layoutName]);
 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -121,6 +126,10 @@ export function MapView() {
       <div className="pr-info-card pr-map-info">
         <h3>CARTOGRAPHICUM</h3>
         <p>Every note linked by <b><code>{"[[wikilinks]]"}</code></b>, parsed live — coloured by <b>folder</b>, sized by <b>link count</b>. Works on any vault.</p>
+        <div className="pr-map-toggle">
+          <button className={layoutName === "radial" ? "is-active" : ""} onClick={() => setLayout("radial")}>radial</button>
+          <button className={layoutName === "hierarchical" ? "is-active" : ""} onClick={() => setLayout("hierarchical")}>hierarchical</button>
+        </div>
         <div className="pr-info-meta" style={{ marginTop: "8px" }}>scroll = zoom · drag = pan · click a node to open · <a onClick={reset}>reset</a></div>
       </div>
       {(linkNotes ?? []).length ? (
