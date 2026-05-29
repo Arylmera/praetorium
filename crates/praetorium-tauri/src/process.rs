@@ -114,7 +114,17 @@ pub async fn run_claude(
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    if let Some(dir) = plan.cwd {
+    // A no-cwd run must NOT inherit the app's own working directory: for an
+    // installed build that's the binary's install dir (e.g.
+    // %LOCALAPPDATA%\praetorium), which the file-watcher then reads back and
+    // surfaces as a bogus "praetorium" project label on the observed twin.
+    // Fall back to the user's home directory — a neutral, real workspace.
+    let dir = plan.cwd.or_else(|| {
+        std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .ok()
+    });
+    if let Some(dir) = dir {
         command.current_dir(dir);
     }
     let mut child = command
