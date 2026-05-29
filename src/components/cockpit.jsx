@@ -111,41 +111,63 @@ export function Cockpit() {
   }, [bounds, zoom, pan]);
 
   // Pointer / wheel handlers (pan + zoom).
+  // Attached natively (not via React props) because React 18 delegates events
+  // at the root: that makes onWheel passive (preventDefault ignored → zoom dead)
+  // and routes pointer events through the root, breaking setPointerCapture-based
+  // dragging. Native listeners on the svg restore the pre-port (Solid) behavior.
   const drag = useRef(false);
   const moved = useRef(false);
   const captured = useRef(false);
   const lx = useRef(0), ly = useRef(0);
 
-  const onWheel = useCallback((e) => {
-    e.preventDefault();
-    const f = e.deltaY < 0 ? 1.2 : 1 / 1.2;
-    setZoom((z) => Math.min(8, Math.max(0.4, z * f)));
-  }, []);
+  const boundsRef = useRef(bounds); boundsRef.current = bounds;
+  const zoomRef = useRef(zoom); zoomRef.current = zoom;
 
-  const onDown = useCallback((e) => {
-    drag.current = true; moved.current = false; captured.current = false;
-    lx.current = e.clientX; ly.current = e.clientY;
-  }, []);
+  useEffect(() => {
+    const svg = svgEl.current;
+    if (!svg) return;
 
-  const onMove = useCallback((e) => {
-    if (!drag.current || !svgEl.current) return;
-    if (!moved.current) {
-      if (Math.abs(e.clientX - lx.current) + Math.abs(e.clientY - ly.current) <= 3) return;
-      moved.current = true;
-      e.currentTarget.setPointerCapture?.(e.pointerId);
-      captured.current = true;
+    const onWheel = (e) => {
+      e.preventDefault();
+      const f = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+      setZoom((z) => Math.min(8, Math.max(0.4, z * f)));
+    };
+    const onDown = (e) => {
+      drag.current = true; moved.current = false; captured.current = false;
       lx.current = e.clientX; ly.current = e.clientY;
-      return;
-    }
-    const r = svgEl.current.getBoundingClientRect();
-    const scale = (bounds.bw / zoom) / r.width;
-    setPan((p) => ({ x: p.x - (e.clientX - lx.current) * scale, y: p.y - (e.clientY - ly.current) * scale }));
-    lx.current = e.clientX; ly.current = e.clientY;
-  }, [bounds, zoom]);
+    };
+    const onMove = (e) => {
+      if (!drag.current) return;
+      if (!moved.current) {
+        if (Math.abs(e.clientX - lx.current) + Math.abs(e.clientY - ly.current) <= 3) return;
+        moved.current = true;
+        svg.setPointerCapture?.(e.pointerId);
+        captured.current = true;
+        lx.current = e.clientX; ly.current = e.clientY;
+        return;
+      }
+      const r = svg.getBoundingClientRect();
+      const scale = (boundsRef.current.bw / zoomRef.current) / r.width;
+      setPan((p) => ({ x: p.x - (e.clientX - lx.current) * scale, y: p.y - (e.clientY - ly.current) * scale }));
+      lx.current = e.clientX; ly.current = e.clientY;
+    };
+    const onUp = (e) => {
+      drag.current = false;
+      if (captured.current) { svg.releasePointerCapture?.(e.pointerId); captured.current = false; }
+    };
 
-  const onUp = useCallback((e) => {
-    drag.current = false;
-    if (captured.current) { e.currentTarget.releasePointerCapture?.(e.pointerId); captured.current = false; }
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    svg.addEventListener("pointerdown", onDown);
+    svg.addEventListener("pointermove", onMove);
+    svg.addEventListener("pointerup", onUp);
+    svg.addEventListener("pointerleave", onUp);
+    return () => {
+      svg.removeEventListener("wheel", onWheel);
+      svg.removeEventListener("pointerdown", onDown);
+      svg.removeEventListener("pointermove", onMove);
+      svg.removeEventListener("pointerup", onUp);
+      svg.removeEventListener("pointerleave", onUp);
+    };
   }, []);
 
   const reset = useCallback(() => { setZoom(1); setPan({ x: 0, y: 0 }); }, []);
@@ -206,7 +228,6 @@ export function Cockpit() {
     <div className="pr-cockpit">
       <svg ref={svgEl} width="100%" height="100%" viewBox={viewBox} preserveAspectRatio="xMidYMid meet"
         style={{ cursor: "grab", touchAction: "none" }}
-        onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}
         onClick={() => { if (!moved.current) setSelected(null); }}>
         {[...displayGraph.edges.values()].map((e) => {
           const a = positions.get(e.source);
